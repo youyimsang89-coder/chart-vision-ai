@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeChartWithAI } from "@/lib/analyze-chart";
+import { verifyAccessPassword } from "@/lib/auth";
 import { AnalyzeChartRequest, AnalyzeChartResponse } from "@/lib/types";
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -28,6 +29,11 @@ export async function POST(
     return err("요청 본문이 올바른 JSON 형식이 아닙니다.", 400);
   }
 
+  // 접근 비밀번호 검증
+  if (!verifyAccessPassword(body.accessPassword)) {
+    return err("접근 비밀번호가 올바르지 않습니다.", 401);
+  }
+
   const { imageBase64, mimeType, options } = body;
 
   if (typeof imageBase64 !== "string" || imageBase64.length === 0) {
@@ -47,11 +53,7 @@ export async function POST(
   if (!symbol) return err("종목을 입력해주세요.", 400);
 
   const validTimeframes = ["1m", "5m", "15m", "1h", "4h", "1D"] as const;
-  if (
-    !validTimeframes.includes(
-      options.timeframe as (typeof validTimeframes)[number]
-    )
-  ) {
+  if (!validTimeframes.includes(options.timeframe as (typeof validTimeframes)[number])) {
     return err("올바른 타임프레임을 선택해주세요.", 400);
   }
 
@@ -64,20 +66,10 @@ export async function POST(
     const { result, detected, mode, warning } = await analyzeChartWithAI(
       imageBase64,
       mimeType,
-      {
-        ...options,
-        symbol: symbol.toUpperCase(),
-      }
+      { ...options, symbol: symbol.toUpperCase() }
     );
 
-    return NextResponse.json({
-      success: true,
-      mode,
-      warning,
-      result,
-      data: result,
-      detected,
-    });
+    return NextResponse.json({ success: true, mode, warning, result, data: result, detected });
   } catch {
     return err("분석 중 알 수 없는 오류가 발생했습니다.", 500);
   }

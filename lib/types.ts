@@ -35,16 +35,14 @@ export interface AnalysisProvider {
     warning?: string;
     detected?: DetectedChartMeta;
   }>;
-  detectMeta?(
-    imageBase64: string,
-    mimeType: string
-  ): Promise<DetectedChartMeta>;
+  detectMeta?(imageBase64: string, mimeType: string): Promise<DetectedChartMeta>;
 }
 
 export interface AnalyzeChartRequest {
   imageBase64: string;
   mimeType: string;
   options: AnalysisOptions;
+  accessPassword?: string;
 }
 
 export interface AnalyzeChartResponse {
@@ -60,11 +58,15 @@ export interface AnalyzeChartResponse {
 export interface DetectChartMetaRequest {
   imageBase64: string;
   mimeType: string;
+  accessPassword?: string;
 }
 
 export interface DetectChartMetaResponse {
   success: boolean;
-  detected?: DetectedChartMeta;
+  symbol: string | null;
+  timeframe: Timeframe | null;
+  confidence: number;
+  warning: string;
   error?: string;
 }
 

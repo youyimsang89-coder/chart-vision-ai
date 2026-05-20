@@ -18,11 +18,84 @@ type ClaudeMessageResponse = {
   content?: Array<{ type?: string; text?: string }>;
 };
 
+type ClaudeErrorBody = {
+  error?: { type?: string; message?: string };
+};
+
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_CLAUDE_MODEL = "claude-3-5-sonnet-latest";
 const CLAUDE_ANALYSIS_TIMEOUT_MS = 30_000;
 const CLAUDE_META_TIMEOUT_MS = 12_000;
 const VALID_TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1D"];
+
+// ─── 로그 헬퍼 ────────────────────────────────────────────────────────────────
+
+function logClaudeHttpError(
+  status: number,
+  errorBody: ClaudeErrorBody | null,
+  ctx: { model: string; hasApiKey: boolean }
+): void {
+  const errObj = errorBody?.error ?? {};
+  console.error("[ChartVisionAI] Claude API HTTP error", {
+    apiKeyPresent: ctx.hasApiKey,
+    model: ctx.model,
+    httpStatus: status,
+    errorType: errObj.type ?? "unknown",
+    errorMessage: errObj.message ?? "(no message)",
+  });
+}
+
+function logClaudeNetworkError(
+  err: unknown,
+  ctx: { model: string; hasApiKey: boolean }
+): void {
+  const isTimeout =
+    err instanceof Error &&
+    (err.name === "AbortError" || err.name === "TimeoutError");
+  console.error("[ChartVisionAI] Claude API network error", {
+    apiKeyPresent: ctx.hasApiKey,
+    model: ctx.model,
+    errorName: err instanceof Error ? err.name : "unknown",
+    isTimeout,
+    errorMessage: err instanceof Error ? err.message : String(err),
+  });
+}
+
+// ─── 정규화 헬퍼 ─────────────────────────────────────────────────────────────
+
+/** 다양한 타임프레임 표기를 Timeframe 유니언으로 정규화 */
+function normalizeTimeframe(raw: string): Timeframe | null {
+  const s = raw.trim().toLowerCase();
+  const map: Record<string, Timeframe> = {
+    "1m": "1m",   "1min": "1m",  "1분": "1m",  "1": "1m",
+    "5m": "5m",   "5min": "5m",  "5분": "5m",  "5": "5m",
+    "15m": "15m", "15min": "15m","15분": "15m","15": "15m",
+    "1h": "1h",   "60m": "1h",   "1시간": "1h","60": "1h",
+    "4h": "4h",   "240m": "4h",  "4시간": "4h","240": "4h",
+    "1d": "1D",   "d": "1D",     "1일": "1D",  "일봉": "1D",
+  };
+  return map[s] ?? null;
+}
+
+/** 종목명을 표준 형식으로 정규화 (BINANCE:BTCUSDT → BTCUSDT, BTC/USD → BTCUSDT 등) */
+function normalizeSymbol(raw: string): string {
+  // 거래소 접두어 제거: BINANCE:BTCUSDT → BTCUSDT
+  let s = raw.replace(/^[A-Za-z]+:/i, "").trim().toUpperCase();
+  // 접미어 제거: .P, PERP, FUTURES, SWAP, PERPETUAL
+  s = s.replace(/\.(P|PERP|FUTURES|SWAP)$/i, "").trim();
+  s = s.replace(/\s+(PERP|FUTURES|SWAP|PERPETUAL|CONTRACT)$/i, "").trim();
+  // 슬래시 구분자 처리: BTC/USD → BTCUSDT, ETH/USDT → ETHUSDT
+  if (s.includes("/")) {
+    const parts = s.split("/");
+    const base = parts[0].trim();
+    const quote = parts[1]?.trim() ?? "";
+    const normalizedQuote = quote === "USD" ? "USDT" : quote;
+    s = base + normalizedQuote;
+  }
+  return s;
+}
+
+// ─── Mock 데이터 ──────────────────────────────────────────────────────────────
 
 const MOCK_RESULTS: AnalysisResult[] = [
   {
@@ -72,6 +145,8 @@ const PURPOSE_LABELS: Record<AnalysisOptions["purpose"], string> = {
   swing: "스윙",
 };
 
+// ─── Providers ────────────────────────────────────────────────────────────────
+
 class MockProvider implements AnalysisProvider {
   async analyze(): Promise<ProviderResult> {
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -87,6 +162,9 @@ class ClaudeProvider implements AnalysisProvider {
     mimeType: string,
     options: AnalysisOptions
   ): Promise<ProviderResult> {
+    const model = process.env.ANTHROPIC_MODEL ?? DEFAULT_CLAUDE_MODEL;
+    const logCtx = { model, hasApiKey: Boolean(this.apiKey) };
+
     try {
       const response = await fetch(ANTHROPIC_MESSAGES_URL, {
         method: "POST",
@@ -97,7 +175,7 @@ class ClaudeProvider implements AnalysisProvider {
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: process.env.ANTHROPIC_MODEL ?? DEFAULT_CLAUDE_MODEL,
+          model,
           max_tokens: 1000,
           temperature: 0.2,
           system: buildAnalysisSystemPrompt(),
@@ -117,12 +195,16 @@ class ClaudeProvider implements AnalysisProvider {
       });
 
       if (!response.ok) {
+        let errorBody: ClaudeErrorBody | null = null;
+        try { errorBody = (await response.json()) as ClaudeErrorBody; } catch { /* ignore */ }
+        logClaudeHttpError(response.status, errorBody, logCtx);
         return createFallbackProviderResult(options, warningForClaudeStatus(response.status));
       }
 
       const json = (await response.json()) as ClaudeMessageResponse;
       const content = getClaudeText(json);
       if (!content) {
+        console.error("[ChartVisionAI] Claude response empty", logCtx);
         return createFallbackProviderResult(options, "Claude response was empty. Mock result returned.");
       }
 
@@ -130,14 +212,21 @@ class ClaudeProvider implements AnalysisProvider {
         const parsed = JSON.parse(extractJsonText(content));
         const normalized = validateAndNormalizeProviderResult(parsed, options);
         return { ...normalized, mode: "claude" };
-      } catch {
+      } catch (parseErr) {
+        console.error("[ChartVisionAI] Claude JSON parse failed", {
+          ...logCtx,
+          errorMessage: parseErr instanceof Error ? parseErr.message : String(parseErr),
+        });
         return createFallbackProviderResult(options, "Claude response JSON parse failed. Mock result returned.");
       }
-    } catch {
-      return createFallbackProviderResult(options, "Claude API failed. Mock result returned.");
+    } catch (err) {
+      logClaudeNetworkError(err, logCtx);
+      return createFallbackProviderResult(options, warningForNetworkError(err));
     }
   }
 }
+
+// ─── 프롬프트 빌더 ────────────────────────────────────────────────────────────
 
 function buildAnalysisSystemPrompt(): string {
   return `You are a chart image analysis assistant.
@@ -174,19 +263,28 @@ First read the visible symbol/timeframe from the chart image if possible, then r
 }
 
 function buildMetaPrompt(): string {
-  return `Read only the visible chart symbol and timeframe from this image.
-Return only one valid JSON object with this shape:
+  return `Read the trading symbol and timeframe/interval visible in this chart image.
+Return only one valid JSON object with no markdown or extra text:
 {
   "detectedSymbol": string | null,
-  "detectedTimeframe": "1m" | "5m" | "15m" | "1h" | "4h" | "1D" | null
+  "detectedTimeframe": string | null,
+  "confidence": number
 }
-If either value is unclear, return null for that field.`;
+- detectedSymbol: the ticker/symbol shown (e.g. "BTCUSDT", "BTCUSDT.P", "BTC/USDT", "BINANCE:BTCUSDT")
+- detectedTimeframe: the candle interval shown (e.g. "1h", "4h", "1D", "15m", "1시간", "4시간")
+- confidence: 0-100, how certain you are about the detected values
+If a value is unclear or not visible in the image, return null for that field.`;
 }
+
+// ─── 내부 유틸 ────────────────────────────────────────────────────────────────
 
 function getClaudeText(json: ClaudeMessageResponse): string | null {
   const content = json.content;
   if (!Array.isArray(content)) return null;
-  return content.find((block) => block.type === "text" && typeof block.text === "string")?.text ?? null;
+  return (
+    content.find((block) => block.type === "text" && typeof block.text === "string")
+      ?.text ?? null
+  );
 }
 
 function extractJsonText(content: string): string {
@@ -201,9 +299,7 @@ function validateAndNormalizeProviderResult(
   raw: unknown,
   options: AnalysisOptions
 ): Omit<ProviderResult, "mode" | "warning"> {
-  if (typeof raw !== "object" || raw === null) {
-    throw new Error("Invalid Claude response shape.");
-  }
+  if (typeof raw !== "object" || raw === null) throw new Error("Invalid Claude response shape.");
   const value = raw as Record<string, unknown>;
   const result: AnalysisResult = {
     trend: readText(value.trend, "추세 판단 불가"),
@@ -227,23 +323,12 @@ function normalizeDetectedMeta(
   options: AnalysisOptions
 ): DetectedChartMeta {
   const detected: DetectedChartMeta = {};
-  const symbol = typeof value.detectedSymbol === "string" ? value.detectedSymbol.trim().toUpperCase() : "";
-  const timeframe = typeof value.detectedTimeframe === "string" ? value.detectedTimeframe : "";
+  const rawSymbol = typeof value.detectedSymbol === "string" ? value.detectedSymbol : "";
+  const rawTimeframe = typeof value.detectedTimeframe === "string" ? value.detectedTimeframe : "";
+  const symbol = rawSymbol ? normalizeSymbol(rawSymbol) : "";
+  const timeframe = rawTimeframe ? normalizeTimeframe(rawTimeframe) : null;
   if (symbol && symbol !== options.symbol.toUpperCase()) detected.symbol = symbol;
-  if (VALID_TIMEFRAMES.includes(timeframe as Timeframe) && timeframe !== options.timeframe) {
-    detected.timeframe = timeframe as Timeframe;
-  }
-  return detected;
-}
-
-function normalizeDetectedMetaOnly(value: unknown): DetectedChartMeta {
-  if (typeof value !== "object" || value === null) return {};
-  const raw = value as Record<string, unknown>;
-  const detected: DetectedChartMeta = {};
-  const symbol = typeof raw.detectedSymbol === "string" ? raw.detectedSymbol.trim().toUpperCase() : "";
-  const timeframe = typeof raw.detectedTimeframe === "string" ? raw.detectedTimeframe : "";
-  if (symbol) detected.symbol = symbol;
-  if (VALID_TIMEFRAMES.includes(timeframe as Timeframe)) detected.timeframe = timeframe as Timeframe;
+  if (timeframe && timeframe !== options.timeframe) detected.timeframe = timeframe;
   return detected;
 }
 
@@ -279,10 +364,18 @@ function createFallbackResult(options: AnalysisOptions, reason: string): Analysi
 }
 
 function warningForClaudeStatus(status: number): string {
-  if (status === 401) return "Claude authentication failed. Mock result returned.";
-  if (status === 429) return "Claude rate limit or quota exceeded. Mock result returned.";
-  if (status >= 500 && status <= 599) return "Claude server error. Mock result returned.";
-  return "Claude API failed. Mock result returned.";
+  if (status === 401) return "Claude authentication failed — API 키가 올바르지 않습니다.";
+  if (status === 403) return "Claude access forbidden — 계정 권한을 확인해주세요.";
+  if (status === 429) return "Claude quota exceeded — 요청 한도에 도달했습니다.";
+  if (status >= 500 && status <= 599) return "Claude server error — 잠시 후 다시 시도해주세요.";
+  return `Claude API failed (HTTP ${status}). Mock result returned.`;
+}
+
+function warningForNetworkError(err: unknown): string {
+  const isTimeout =
+    err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
+  if (isTimeout) return "Claude API timed out — 네트워크 상태를 확인해주세요.";
+  return "Claude API network error. Mock result returned.";
 }
 
 function getAnthropicApiKey(): string | null {
@@ -292,8 +385,16 @@ function getAnthropicApiKey(): string | null {
 
 function getProvider(): AnalysisProvider {
   const apiKey = getAnthropicApiKey();
-  return apiKey ? new ClaudeProvider(apiKey) : new MockProvider();
+  const model = process.env.ANTHROPIC_MODEL ?? DEFAULT_CLAUDE_MODEL;
+  if (apiKey) {
+    console.info("[ChartVisionAI] Provider: Claude", { apiKeyPresent: true, model });
+    return new ClaudeProvider(apiKey);
+  }
+  console.warn("[ChartVisionAI] Provider: Mock (ANTHROPIC_API_KEY not set)", { apiKeyPresent: false });
+  return new MockProvider();
 }
+
+// ─── 공개 API ─────────────────────────────────────────────────────────────────
 
 export async function analyzeChartWithAI(
   imageBase64: string,
@@ -306,9 +407,12 @@ export async function analyzeChartWithAI(
 export async function detectChartMetaWithAI(
   imageBase64: string,
   mimeType: string
-): Promise<DetectedChartMeta> {
+): Promise<{ symbol: string | null; timeframe: Timeframe | null; confidence: number }> {
   const apiKey = getAnthropicApiKey();
-  if (!apiKey) return {};
+  if (!apiKey) return { symbol: null, timeframe: null, confidence: 0 };
+
+  const model = process.env.ANTHROPIC_MODEL ?? DEFAULT_CLAUDE_MODEL;
+  const logCtx = { model, hasApiKey: true };
 
   try {
     const response = await fetch(ANTHROPIC_MESSAGES_URL, {
@@ -320,7 +424,7 @@ export async function detectChartMetaWithAI(
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL ?? DEFAULT_CLAUDE_MODEL,
+        model,
         max_tokens: 180,
         temperature: 0,
         system: "Return only valid JSON. Do not include markdown or extra text.",
@@ -339,12 +443,39 @@ export async function detectChartMetaWithAI(
       }),
     });
 
-    if (!response.ok) return {};
+    if (!response.ok) {
+      let errorBody: ClaudeErrorBody | null = null;
+      try { errorBody = (await response.json()) as ClaudeErrorBody; } catch { /* ignore */ }
+      logClaudeHttpError(response.status, errorBody, logCtx);
+      return { symbol: null, timeframe: null, confidence: 0 };
+    }
+
     const json = (await response.json()) as ClaudeMessageResponse;
     const content = getClaudeText(json);
-    if (!content) return {};
-    return normalizeDetectedMetaOnly(JSON.parse(extractJsonText(content)));
-  } catch {
-    return {};
+    if (!content) return { symbol: null, timeframe: null, confidence: 0 };
+
+    const parsed = JSON.parse(extractJsonText(content)) as Record<string, unknown>;
+    const rawSymbol = typeof parsed.detectedSymbol === "string" ? parsed.detectedSymbol : null;
+    const rawTimeframe = typeof parsed.detectedTimeframe === "string" ? parsed.detectedTimeframe : null;
+    const confidence =
+      typeof parsed.confidence === "number"
+        ? Math.min(100, Math.max(0, Math.round(parsed.confidence)))
+        : 50;
+
+    const symbol = rawSymbol ? normalizeSymbol(rawSymbol) : null;
+    const timeframe = rawTimeframe ? normalizeTimeframe(rawTimeframe) : null;
+
+    const hasResult = Boolean(symbol || timeframe);
+    return {
+      symbol: symbol || null,
+      timeframe,
+      confidence: hasResult ? confidence : 0,
+    };
+  } catch (err) {
+    logClaudeNetworkError(err, logCtx);
+    return { symbol: null, timeframe: null, confidence: 0 };
   }
 }
+
+// VALID_TIMEFRAMES 는 내부 참조용으로만 사용
+void VALID_TIMEFRAMES;
