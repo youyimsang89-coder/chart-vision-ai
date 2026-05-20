@@ -1,0 +1,30 @@
+
+> chart-vision-ai@0.1.0 dev
+> next dev -p 3000
+
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.2s
+ ○ Compiling / ...
+ ✓ Compiled / in 4.9s (523 modules)
+ GET / 200 in 355ms
+ ✓ Compiled in 389ms (266 modules)
+ GET / 200 in 31ms
+ ✓ Compiled /api/detect-chart-meta in 332ms (279 modules)
+ POST /api/detect-chart-meta 200 in 2496ms
+   Reload env: .env.local
+ ✓ Compiled in 149ms (252 modules)
+   Reload env: .env.local
+ ✓ Compiled in 107ms (252 modules)
+ ✓ Compiled in 224ms (266 modules)
+ ✓ Compiled in 533ms (266 modules)
+ ✓ Compiled /api/analyze-chart in 160ms (57 modules)
+ POST /api/analyze-chart 200 in 1612ms
+ ✓ Compiled / in 270ms (279 modules)
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 2s (772 modules)
+ GET / 500 in 3874ms
+ GET / 200 in 121ms
