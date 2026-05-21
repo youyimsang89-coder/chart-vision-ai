@@ -17,7 +17,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeCh
   if (!session?.user?.id) return err("로그인이 필요합니다.", 401);
 
   const userId = parseInt(session.user.id, 10);
-  const user = getUserById(userId);
+  const user = await getUserById(userId);
   if (!user) return err("사용자 정보를 찾을 수 없습니다.", 401);
 
   if (user.credits <= 0)
@@ -53,10 +53,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeCh
     const analysisOptions: AnalysisOptions = { symbol: symbol.toUpperCase(), timeframe: options.timeframe, purpose: options.purpose };
     const { result, detected, mode, warning } = await analyzeChartWithAI(imageBase64, mimeType, analysisOptions);
 
-    deductCredit(userId);
-    logAnalysis(userId, symbol.toUpperCase(), options.timeframe, options.purpose, mode);
+    await deductCredit(userId);
+    await logAnalysis(userId, symbol.toUpperCase(), options.timeframe, options.purpose, mode);
 
-    const freshUser = getUserById(userId);
+    const freshUser = await getUserById(userId);
     const remainingCredits = freshUser?.credits ?? 0;
 
     return NextResponse.json({ success: true, mode, warning, result, data: result, detected, remainingCredits });

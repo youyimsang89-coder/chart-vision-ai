@@ -5,25 +5,13 @@ import { getAdminStats, getAllAnalysisLogs } from "@/lib/db";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  if (!session?.user?.id || session.user.role !== "admin") {
-    return NextResponse.json({ success: false, error: "관리자 권한이 필요합니다." }, { status: 403 });
-  }
+  if (!session?.user?.id || session.user.role !== "admin")
+    return NextResponse.json({ error: "관리자 권한이 필요합니다." }, { status: 403 });
 
-  const stats = getAdminStats();
-  const recentLogs = getAllAnalysisLogs(20);
+  const [stats, recentLogs] = await Promise.all([
+    getAdminStats(),
+    getAllAnalysisLogs(20),
+  ]);
 
-  return NextResponse.json({
-    success: true,
-    stats,
-    recentLogs: recentLogs.map((l) => ({
-      id: l.id,
-      userEmail: l.userEmail,
-      userName: l.userName,
-      symbol: l.symbol,
-      timeframe: l.timeframe,
-      purpose: l.purpose,
-      mode: l.mode,
-      createdAt: l.createdAt,
-    })),
-  });
+  return NextResponse.json({ stats, recentLogs });
 }
