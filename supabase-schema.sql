@@ -1,9 +1,8 @@
 -- ============================================================
 -- Chart Vision AI - Supabase SQL Schema
--- Supabase Dashboard > SQL Editor 에서 전체 실행
+-- Supabase Dashboard > SQL Editor에서 전체 실행
 -- ============================================================
 
--- 1. users 테이블
 CREATE TABLE IF NOT EXISTS public.users (
   id            BIGSERIAL PRIMARY KEY,
   email         TEXT UNIQUE NOT NULL,
@@ -14,7 +13,6 @@ CREATE TABLE IF NOT EXISTS public.users (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 2. analysis_logs 테이블
 CREATE TABLE IF NOT EXISTS public.analysis_logs (
   id           BIGSERIAL PRIMARY KEY,
   user_id      BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -26,7 +24,6 @@ CREATE TABLE IF NOT EXISTS public.analysis_logs (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3. credit_transactions 테이블
 CREATE TABLE IF NOT EXISTS public.credit_transactions (
   id         BIGSERIAL PRIMARY KEY,
   user_id    BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -36,19 +33,28 @@ CREATE TABLE IF NOT EXISTS public.credit_transactions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 4. 인덱스
-CREATE INDEX IF NOT EXISTS idx_users_email            ON public.users(email);
+CREATE TABLE IF NOT EXISTS public.password_reset_tokens (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at    TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
 CREATE INDEX IF NOT EXISTS idx_analysis_logs_user_id ON public.analysis_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_analysis_logs_created ON public.analysis_logs(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_credit_tx_user_id     ON public.credit_transactions(user_id);
-CREATE INDEX IF NOT EXISTS idx_credit_tx_created     ON public.credit_transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_credit_tx_user_id ON public.credit_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_credit_tx_created ON public.credit_transactions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON public.password_reset_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON public.password_reset_tokens(user_id);
 
--- 5. RLS 비활성화 (service_role key로만 서버에서 접근)
-ALTER TABLE public.users               DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.analysis_logs       DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.analysis_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.credit_transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.password_reset_tokens DISABLE ROW LEVEL SECURITY;
 
--- 6. credits 원자적 증가 함수 (관리자 충전)
 CREATE OR REPLACE FUNCTION public.increment_credits(p_user_id BIGINT, p_amount INTEGER)
 RETURNS INTEGER
 LANGUAGE plpgsql
@@ -60,11 +66,11 @@ BEGIN
   SET credits = credits + p_amount
   WHERE id = p_user_id
   RETURNING credits INTO new_credits;
+
   RETURN new_credits;
 END;
 $$;
 
--- 7. credits 원자적 차감 함수 (분석 시 1회 차감, 0 미만 차단)
 CREATE OR REPLACE FUNCTION public.decrement_credit_safe(p_user_id BIGINT)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -88,8 +94,3 @@ BEGIN
   RETURN TRUE;
 END;
 $$;
-
--- ============================================================
--- 완료. 관리자 계정은 서버 시작 시 ADMIN_EMAIL/ADMIN_PASSWORD
--- 환경변수로 자동 생성됩니다.
--- ============================================================

@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { supabase } from "./supabase";
 
 export interface DbUser {
@@ -65,6 +66,15 @@ type CreditTransactionRow = {
   amount: number;
   reason: string;
   admin_id: number | null;
+  created_at: string;
+};
+
+type PasswordResetTokenRow = {
+  id: number;
+  user_id: number;
+  token_hash: string;
+  expires_at: string;
+  used_at: string | null;
   created_at: string;
 };
 
@@ -215,6 +225,71 @@ export async function getAllUsers(): Promise<DbUser[]> {
 
 export async function getUserCredits(userId: number): Promise<number> {
   return (await getUserById(userId))?.credits ?? 0;
+}
+
+export async function createPasswordResetToken(
+  email: string
+): Promise<{ token: string; user: DbUser } | null> {
+  const user = await getUserByEmail(email);
+  if (!user) return null;
+
+  const token = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashResetToken(token);
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 30).toISOString();
+
+  await supabase
+    .from("password_reset_tokens")
+    .update({ used_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .is("used_at", null);
+
+  const { error } = await supabase.from("password_reset_tokens").insert({
+    user_id: user.id,
+    token_hash: tokenHash,
+    expires_at: expiresAt,
+  });
+
+  if (error) throw new Error(error.message);
+  return { token, user };
+}
+
+export async function resetPasswordWithToken(
+  token: string,
+  passwordHash: string
+): Promise<boolean> {
+  const tokenHash = hashResetToken(token);
+
+  const { data, error } = await supabase
+    .from("password_reset_tokens")
+    .select("*")
+    .eq("token_hash", tokenHash)
+    .is("used_at", null)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return false;
+
+  const resetToken = data as PasswordResetTokenRow;
+  if (new Date(resetToken.expires_at).getTime() < Date.now()) return false;
+
+  const { error: updateError } = await supabase
+    .from("users")
+    .update({ password_hash: passwordHash })
+    .eq("id", resetToken.user_id);
+
+  if (updateError) throw new Error(updateError.message);
+
+  const { error: useError } = await supabase
+    .from("password_reset_tokens")
+    .update({ used_at: new Date().toISOString() })
+    .eq("id", resetToken.id);
+
+  if (useError) throw new Error(useError.message);
+  return true;
+}
+
+function hashResetToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 export async function addCredits(

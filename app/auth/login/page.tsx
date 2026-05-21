@@ -82,12 +82,20 @@ function LoginForm() {
         </div>
 
         <div>
-          <label
-            htmlFor="password"
-            className="mb-1.5 block text-xs font-medium text-zinc-400"
-          >
-            비밀번호
-          </label>
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <label
+              htmlFor="password"
+              className="block text-xs font-medium text-zinc-400"
+            >
+              비밀번호
+            </label>
+            <Link
+              href="/auth/forgot-password"
+              className="text-xs text-emerald-400 transition hover:text-emerald-300"
+            >
+              비밀번호 찾기
+            </Link>
+          </div>
           <input
             id="password"
             type="password"
