@@ -14,8 +14,12 @@ type ProviderResult = {
   detected?: DetectedChartMeta;
 };
 
+type ClaudeContentBlock =
+  | { type: "text"; text?: string }
+  | { type: "tool_use"; name?: string; input?: unknown };
+
 type ClaudeMessageResponse = {
-  content?: Array<{ type?: string; text?: string }>;
+  content?: ClaudeContentBlock[];
 };
 
 type ClaudeErrorBody = {
@@ -24,78 +28,9 @@ type ClaudeErrorBody = {
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_CLAUDE_MODEL = "claude-3-5-sonnet-latest";
-const CLAUDE_ANALYSIS_TIMEOUT_MS = 30_000;
-const CLAUDE_META_TIMEOUT_MS = 12_000;
+const CLAUDE_ANALYSIS_TIMEOUT_MS = 45_000;
+const CLAUDE_META_TIMEOUT_MS = 15_000;
 const VALID_TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1D"];
-
-// ─── 로그 헬퍼 ────────────────────────────────────────────────────────────────
-
-function logClaudeHttpError(
-  status: number,
-  errorBody: ClaudeErrorBody | null,
-  ctx: { model: string; hasApiKey: boolean }
-): void {
-  const errObj = errorBody?.error ?? {};
-  console.error("[ChartVisionAI] Claude API HTTP error", {
-    apiKeyPresent: ctx.hasApiKey,
-    model: ctx.model,
-    httpStatus: status,
-    errorType: errObj.type ?? "unknown",
-    errorMessage: errObj.message ?? "(no message)",
-  });
-}
-
-function logClaudeNetworkError(
-  err: unknown,
-  ctx: { model: string; hasApiKey: boolean }
-): void {
-  const isTimeout =
-    err instanceof Error &&
-    (err.name === "AbortError" || err.name === "TimeoutError");
-  console.error("[ChartVisionAI] Claude API network error", {
-    apiKeyPresent: ctx.hasApiKey,
-    model: ctx.model,
-    errorName: err instanceof Error ? err.name : "unknown",
-    isTimeout,
-    errorMessage: err instanceof Error ? err.message : String(err),
-  });
-}
-
-// ─── 정규화 헬퍼 ─────────────────────────────────────────────────────────────
-
-/** 다양한 타임프레임 표기를 Timeframe 유니언으로 정규화 */
-function normalizeTimeframe(raw: string): Timeframe | null {
-  const s = raw.trim().toLowerCase();
-  const map: Record<string, Timeframe> = {
-    "1m": "1m",   "1min": "1m",  "1분": "1m",  "1": "1m",
-    "5m": "5m",   "5min": "5m",  "5분": "5m",  "5": "5m",
-    "15m": "15m", "15min": "15m","15분": "15m","15": "15m",
-    "1h": "1h",   "60m": "1h",   "1시간": "1h","60": "1h",
-    "4h": "4h",   "240m": "4h",  "4시간": "4h","240": "4h",
-    "1d": "1D",   "d": "1D",     "1일": "1D",  "일봉": "1D",
-  };
-  return map[s] ?? null;
-}
-
-/** 종목명을 표준 형식으로 정규화 (BINANCE:BTCUSDT → BTCUSDT, BTC/USD → BTCUSDT 등) */
-function normalizeSymbol(raw: string): string {
-  // 거래소 접두어 제거: BINANCE:BTCUSDT → BTCUSDT
-  let s = raw.replace(/^[A-Za-z]+:/i, "").trim().toUpperCase();
-  // 접미어 제거: .P, PERP, FUTURES, SWAP, PERPETUAL
-  s = s.replace(/\.(P|PERP|FUTURES|SWAP)$/i, "").trim();
-  s = s.replace(/\s+(PERP|FUTURES|SWAP|PERPETUAL|CONTRACT)$/i, "").trim();
-  // 슬래시 구분자 처리: BTC/USD → BTCUSDT, ETH/USDT → ETHUSDT
-  if (s.includes("/")) {
-    const parts = s.split("/");
-    const base = parts[0].trim();
-    const quote = parts[1]?.trim() ?? "";
-    const normalizedQuote = quote === "USD" ? "USDT" : quote;
-    s = base + normalizedQuote;
-  }
-  return s;
-}
-
-// ─── Mock 데이터 ──────────────────────────────────────────────────────────────
 
 const MOCK_RESULTS: AnalysisResult[] = [
   {
@@ -104,11 +39,11 @@ const MOCK_RESULTS: AnalysisResult[] = [
     resistanceLevels: ["69,200", "70,500"],
     pattern: "상승 채널",
     longView:
-      "69,200 부근을 거래량과 함께 돌파하고 지지 전환이 확인되면 롱 관점을 참고할 수 있습니다.",
+      "주요 저항 돌파 후 지지 전환이 확인되면 롱 관점을 참고할 수 있습니다.",
     shortView:
-      "67,500 지지 이탈과 약세 캔들이 함께 확인되면 단기 조정 가능성을 참고할 수 있습니다.",
+      "직전 지지 이탈과 약세 캔들이 함께 확인되면 단기 조정 가능성을 참고할 수 있습니다.",
     riskSummary:
-      "거래량이 부족한 돌파는 실패 가능성이 있습니다. 본 분석은 참고용이며 변동성 확인이 필요합니다.",
+      "거래량이 부족한 돌파는 실패 가능성이 있습니다. 본 분석은 참고용이며 투자 조언이 아닙니다.",
     confidence: 76,
   },
   {
@@ -117,9 +52,9 @@ const MOCK_RESULTS: AnalysisResult[] = [
     resistanceLevels: ["67,200", "68,500"],
     pattern: "대칭 삼각형",
     longView:
-      "67,200 상단 돌파와 거래량 증가가 동반되면 상승 시나리오를 참고할 수 있습니다.",
+      "상단 돌파와 거래량 증가가 동반되면 상승 시나리오를 참고할 수 있습니다.",
     shortView:
-      "65,000 하단 이탈 시 박스권 하방 돌파 가능성을 검토할 수 있습니다.",
+      "하단 이탈 시 박스권 하방 돌파 가능성을 검토할 수 있습니다.",
     riskSummary:
       "수렴 구간에서는 방향성이 불확실합니다. 확정적 판단보다 돌파 이후 확인이 중요합니다.",
     confidence: 61,
@@ -130,9 +65,9 @@ const MOCK_RESULTS: AnalysisResult[] = [
     resistanceLevels: ["64,800", "66,000"],
     pattern: "하락 쐐기",
     longView:
-      "하락 쐐기 하단 지지와 과매도 신호가 함께 보이면 제한적 반등 가능성을 참고할 수 있습니다.",
+      "하단 지지와 과매도 신호가 함께 보이면 제한적 반등 가능성을 참고할 수 있습니다.",
     shortView:
-      "64,800 저항 실패와 약세 캔들이 확인되면 하락 지속 시나리오를 검토할 수 있습니다.",
+      "주요 저항 실패와 약세 캔들이 확인되면 하락 지속 시나리오를 검토할 수 있습니다.",
     riskSummary:
       "전체 흐름은 약세입니다. 추격 진입은 위험할 수 있으며 포지션 크기 관리가 필요합니다.",
     confidence: 83,
@@ -145,7 +80,56 @@ const PURPOSE_LABELS: Record<AnalysisOptions["purpose"], string> = {
   swing: "스윙",
 };
 
-// ─── Providers ────────────────────────────────────────────────────────────────
+const ANALYSIS_TOOL = {
+  name: "return_chart_analysis",
+  description: "Return a structured chart analysis result.",
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      detectedSymbol: { type: ["string", "null"] },
+      detectedTimeframe: {
+        type: ["string", "null"],
+        enum: ["1m", "5m", "15m", "1h", "4h", "1D", null],
+      },
+      trend: { type: "string" },
+      supportLevels: { type: "array", items: { type: "string" } },
+      resistanceLevels: { type: "array", items: { type: "string" } },
+      pattern: { type: "string" },
+      longView: { type: "string" },
+      shortView: { type: "string" },
+      riskSummary: { type: "string" },
+      confidence: { type: "number", minimum: 0, maximum: 100 },
+    },
+    required: [
+      "detectedSymbol",
+      "detectedTimeframe",
+      "trend",
+      "supportLevels",
+      "resistanceLevels",
+      "pattern",
+      "longView",
+      "shortView",
+      "riskSummary",
+      "confidence",
+    ],
+  },
+} as const;
+
+const META_TOOL = {
+  name: "return_chart_meta",
+  description: "Return detected chart symbol and timeframe.",
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      detectedSymbol: { type: ["string", "null"] },
+      detectedTimeframe: { type: ["string", "null"] },
+      confidence: { type: "number", minimum: 0, maximum: 100 },
+    },
+    required: ["detectedSymbol", "detectedTimeframe", "confidence"],
+  },
+} as const;
 
 class MockProvider implements AnalysisProvider {
   async analyze(): Promise<ProviderResult> {
@@ -163,7 +147,6 @@ class ClaudeProvider implements AnalysisProvider {
     options: AnalysisOptions
   ): Promise<ProviderResult> {
     const model = process.env.ANTHROPIC_MODEL ?? DEFAULT_CLAUDE_MODEL;
-    const logCtx = { model, hasApiKey: Boolean(this.apiKey) };
 
     try {
       const response = await fetch(ANTHROPIC_MESSAGES_URL, {
@@ -176,16 +159,22 @@ class ClaudeProvider implements AnalysisProvider {
         },
         body: JSON.stringify({
           model,
-          max_tokens: 1000,
-          temperature: 0.2,
+          max_tokens: 1200,
+          temperature: 0,
           system: buildAnalysisSystemPrompt(),
+          tools: [ANALYSIS_TOOL],
+          tool_choice: { type: "tool", name: ANALYSIS_TOOL.name },
           messages: [
             {
               role: "user",
               content: [
                 {
                   type: "image",
-                  source: { type: "base64", media_type: mimeType, data: imageBase64 },
+                  source: {
+                    type: "base64",
+                    media_type: mimeType,
+                    data: imageBase64,
+                  },
                 },
                 { type: "text", text: buildAnalysisUserPrompt(options) },
               ],
@@ -195,125 +184,124 @@ class ClaudeProvider implements AnalysisProvider {
       });
 
       if (!response.ok) {
-        let errorBody: ClaudeErrorBody | null = null;
-        try { errorBody = (await response.json()) as ClaudeErrorBody; } catch { /* ignore */ }
-        logClaudeHttpError(response.status, errorBody, logCtx);
-        return createFallbackProviderResult(options, warningForClaudeStatus(response.status));
+        await logClaudeHttpError(response, model);
+        return createFallbackProviderResult(
+          options,
+          warningForClaudeStatus(response.status)
+        );
       }
 
       const json = (await response.json()) as ClaudeMessageResponse;
-      const content = getClaudeText(json);
-      if (!content) {
-        console.error("[ChartVisionAI] Claude response empty", logCtx);
-        return createFallbackProviderResult(options, "Claude response was empty. Mock result returned.");
+      const raw = getToolInput(json, ANALYSIS_TOOL.name) ?? getTextJsonInput(json);
+      if (!raw) {
+        return createFallbackProviderResult(
+          options,
+          "Claude response was empty. Mock result returned."
+        );
       }
 
-      try {
-        const parsed = JSON.parse(extractJsonText(content));
-        const normalized = validateAndNormalizeProviderResult(parsed, options);
-        return { ...normalized, mode: "claude" };
-      } catch (parseErr) {
-        console.error("[ChartVisionAI] Claude JSON parse failed", {
-          ...logCtx,
-          errorMessage: parseErr instanceof Error ? parseErr.message : String(parseErr),
-        });
-        return createFallbackProviderResult(options, "Claude response JSON parse failed. Mock result returned.");
-      }
-    } catch (err) {
-      logClaudeNetworkError(err, logCtx);
-      return createFallbackProviderResult(options, warningForNetworkError(err));
+      const normalized = validateAndNormalizeProviderResult(raw, options);
+      return { ...normalized, mode: "claude" };
+    } catch (error) {
+      logClaudeNetworkError(error, model);
+      return createFallbackProviderResult(options, warningForNetworkError(error));
     }
   }
 }
 
-// ─── 프롬프트 빌더 ────────────────────────────────────────────────────────────
-
 function buildAnalysisSystemPrompt(): string {
   return `You are a chart image analysis assistant.
-Return only one valid JSON object. Do not include markdown, code fences, explanations, or extra text.
-Analyze the uploaded chart image and produce a reference-only technical analysis.
-Avoid definitive investment advice, guaranteed profit language, or direct buy/sell instructions.
-Use conditional wording such as "can be referenced", "may indicate", "if confirmed", and "needs confirmation".
-
-The JSON object must have exactly these keys:
-{
-  "detectedSymbol": string | null,
-  "detectedTimeframe": "1m" | "5m" | "15m" | "1h" | "4h" | "1D" | null,
-  "trend": string,
-  "supportLevels": string[],
-  "resistanceLevels": string[],
-  "pattern": string,
-  "longView": string,
-  "shortView": string,
-  "riskSummary": string,
-  "confidence": number
-}
-
-If the symbol or timeframe is not clearly visible in the image, return null for that field.
-Write the analysis in Korean.`;
+Use the provided tool to return a structured result.
+The output is reference-only technical analysis, not investment advice.
+Do not use definitive buy/sell instructions or guaranteed profit language.
+Use conditional Korean wording such as "확인되면", "참고할 수 있습니다", "가능성이 있습니다".
+Analyze both long and short scenarios. Do not claim one side is certain.`;
 }
 
 function buildAnalysisUserPrompt(options: AnalysisOptions): string {
-  return `User selected options:
-Symbol: ${options.symbol}
-Timeframe: ${options.timeframe}
-Purpose: ${PURPOSE_LABELS[options.purpose]}
+  return `현재 사용자가 선택한 값:
+종목: ${options.symbol}
+타임프레임: ${options.timeframe}
+분석 목적: ${PURPOSE_LABELS[options.purpose]}
 
-First read the visible symbol/timeframe from the chart image if possible, then return the JSON analysis.`;
+이미지에서 보이는 종목과 타임프레임을 먼저 읽고, 차트 구조를 분석해주세요.
+supportLevels와 resistanceLevels는 이미지에서 읽히는 주요 가격대만 문자열 배열로 반환해주세요.
+confidence는 롱/숏 성공률이 아니라 이미지에서 차트 구조와 주요 레벨을 얼마나 명확히 읽었는지에 대한 0-100 점수입니다.`;
 }
 
 function buildMetaPrompt(): string {
-  return `Read the trading symbol and timeframe/interval visible in this chart image.
-Return only one valid JSON object with no markdown or extra text:
-{
-  "detectedSymbol": string | null,
-  "detectedTimeframe": string | null,
-  "confidence": number
-}
-- detectedSymbol: the ticker/symbol shown (e.g. "BTCUSDT", "BTCUSDT.P", "BTC/USDT", "BINANCE:BTCUSDT")
-- detectedTimeframe: the candle interval shown (e.g. "1h", "4h", "1D", "15m", "1시간", "4시간")
-- confidence: 0-100, how certain you are about the detected values
-If a value is unclear or not visible in the image, return null for that field.`;
+  return `이미지에서 보이는 트레이딩 종목과 캔들 타임프레임만 읽어주세요.
+예: BTCUSDT, BTCUSDT.P, BTC/USDT, BINANCE:BTCUSDT, 1m, 5m, 15m, 1h, 4h, 1D.
+확실하지 않으면 null을 반환하세요.`;
 }
 
-// ─── 내부 유틸 ────────────────────────────────────────────────────────────────
-
-function getClaudeText(json: ClaudeMessageResponse): string | null {
+function getToolInput(json: ClaudeMessageResponse, toolName: string): unknown | null {
   const content = json.content;
   if (!Array.isArray(content)) return null;
-  return (
-    content.find((block) => block.type === "text" && typeof block.text === "string")
-      ?.text ?? null
+
+  const toolUse = content.find(
+    (block) => block.type === "tool_use" && block.name === toolName
   );
+  return toolUse?.type === "tool_use" ? toolUse.input ?? null : null;
 }
 
-function extractJsonText(content: string): string {
-  const cleaned = content.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+function getTextJsonInput(json: ClaudeMessageResponse): unknown | null {
+  const content = json.content;
+  if (!Array.isArray(content)) return null;
+
+  const text = content.find(
+    (block) => block.type === "text" && typeof block.text === "string"
+  );
+  if (text?.type !== "text" || !text.text) return null;
+
+  return parseLooseJson(text.text);
+}
+
+function parseLooseJson(content: string): unknown | null {
+  const cleaned = content
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
-  if (start >= 0 && end > start) return cleaned.slice(start, end + 1);
-  return cleaned;
+  const candidate = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return null;
+  }
 }
 
 function validateAndNormalizeProviderResult(
   raw: unknown,
   options: AnalysisOptions
 ): Omit<ProviderResult, "mode" | "warning"> {
-  if (typeof raw !== "object" || raw === null) throw new Error("Invalid Claude response shape.");
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("Invalid Claude response shape.");
+  }
+
   const value = raw as Record<string, unknown>;
   const result: AnalysisResult = {
     trend: readText(value.trend, "추세 판단 불가"),
     supportLevels: readStringArray(value.supportLevels),
     resistanceLevels: readStringArray(value.resistanceLevels),
     pattern: readText(value.pattern, "명확한 패턴 없음"),
-    longView: readText(value.longView, "롱 관점은 추가 확인 후 참고할 수 있습니다."),
-    shortView: readText(value.shortView, "숏 관점은 추가 확인 후 참고할 수 있습니다."),
-    riskSummary: readText(value.riskSummary, "본 분석은 참고용이며 실제 거래 전 별도 검토가 필요합니다."),
-    confidence:
-      typeof value.confidence === "number"
-        ? Math.min(100, Math.max(0, Math.round(value.confidence)))
-        : 50,
+    longView: readText(
+      value.longView,
+      "롱 관점은 지지/저항 재확인 후 참고할 수 있습니다."
+    ),
+    shortView: readText(
+      value.shortView,
+      "숏 관점은 이탈 여부 확인 후 참고할 수 있습니다."
+    ),
+    riskSummary: readText(
+      value.riskSummary,
+      "본 분석은 참고용이며 실제 거래 전 별도 검토가 필요합니다."
+    ),
+    confidence: normalizeConfidence(value.confidence),
   };
+
   const detected = normalizeDetectedMeta(value, options);
   return Object.keys(detected).length > 0 ? { result, detected } : { result };
 }
@@ -324,33 +312,104 @@ function normalizeDetectedMeta(
 ): DetectedChartMeta {
   const detected: DetectedChartMeta = {};
   const rawSymbol = typeof value.detectedSymbol === "string" ? value.detectedSymbol : "";
-  const rawTimeframe = typeof value.detectedTimeframe === "string" ? value.detectedTimeframe : "";
+  const rawTimeframe =
+    typeof value.detectedTimeframe === "string" ? value.detectedTimeframe : "";
   const symbol = rawSymbol ? normalizeSymbol(rawSymbol) : "";
   const timeframe = rawTimeframe ? normalizeTimeframe(rawTimeframe) : null;
+
   if (symbol && symbol !== options.symbol.toUpperCase()) detected.symbol = symbol;
   if (timeframe && timeframe !== options.timeframe) detected.timeframe = timeframe;
   return detected;
 }
 
+function normalizeTimeframe(raw: string): Timeframe | null {
+  const s = raw.trim().toLowerCase();
+  const map: Record<string, Timeframe> = {
+    "1m": "1m",
+    "1min": "1m",
+    "1분": "1m",
+    "1": "1m",
+    "5m": "5m",
+    "5min": "5m",
+    "5분": "5m",
+    "5": "5m",
+    "15m": "15m",
+    "15min": "15m",
+    "15분": "15m",
+    "15": "15m",
+    "1h": "1h",
+    "60m": "1h",
+    "1시간": "1h",
+    "60": "1h",
+    "4h": "4h",
+    "240m": "4h",
+    "4시간": "4h",
+    "240": "4h",
+    "1d": "1D",
+    "d": "1D",
+    "1일": "1D",
+    "일봉": "1D",
+  };
+  return map[s] ?? null;
+}
+
+function normalizeSymbol(raw: string): string {
+  let s = raw.replace(/^[A-Za-z]+:/, "").trim().toUpperCase();
+  s = s.replace(/\.(P|PERP|FUTURES|SWAP)$/i, "").trim();
+  s = s.replace(/\s+(PERP|FUTURES|SWAP|PERPETUAL|CONTRACT)$/i, "").trim();
+
+  if (s.includes("/")) {
+    const [base, quote = ""] = s.split("/");
+    s = `${base.trim()}${quote.trim() === "USD" ? "USDT" : quote.trim()}`;
+  }
+
+  return s;
+}
+
 function readText(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : fallback;
 }
 
 function readStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item).trim()).filter((item) => item.length > 0).slice(0, 6);
+  return value
+    .map((item) => String(item).trim())
+    .filter((item) => item.length > 0)
+    .slice(0, 6);
+}
+
+function normalizeConfidence(value: unknown): number {
+  return typeof value === "number"
+    ? Math.min(100, Math.max(0, Math.round(value)))
+    : 50;
 }
 
 function getMockResult(): AnalysisResult {
   const source = MOCK_RESULTS[Math.floor(Math.random() * MOCK_RESULTS.length)];
-  return { ...source, supportLevels: [...source.supportLevels], resistanceLevels: [...source.resistanceLevels] };
+  return {
+    ...source,
+    supportLevels: [...source.supportLevels],
+    resistanceLevels: [...source.resistanceLevels],
+  };
 }
 
-function createFallbackProviderResult(options: AnalysisOptions, warning: string): ProviderResult {
-  return { result: createFallbackResult(options, warning), mode: "fallback", warning };
+function createFallbackProviderResult(
+  options: AnalysisOptions,
+  warning: string
+): ProviderResult {
+  return {
+    result: createFallbackResult(options, warning),
+    mode: "fallback",
+    warning,
+  };
 }
 
-function createFallbackResult(options: AnalysisOptions, reason: string): AnalysisResult {
+function createFallbackResult(
+  options: AnalysisOptions,
+  reason: string
+): AnalysisResult {
   return {
     trend: "분석 결과 확인 필요",
     supportLevels: [],
@@ -363,19 +422,57 @@ function createFallbackResult(options: AnalysisOptions, reason: string): Analysi
   };
 }
 
+async function logClaudeHttpError(
+  response: Response,
+  model: string
+): Promise<void> {
+  let body: ClaudeErrorBody | null = null;
+  try {
+    body = (await response.json()) as ClaudeErrorBody;
+  } catch {
+    // Ignore malformed error body.
+  }
+
+  console.error("[ChartVisionAI] Claude API HTTP error", {
+    apiKeyPresent: true,
+    model,
+    httpStatus: response.status,
+    errorType: body?.error?.type ?? "unknown",
+    errorMessage: body?.error?.message ?? "(no message)",
+  });
+}
+
+function logClaudeNetworkError(error: unknown, model: string): void {
+  const isTimeout =
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError");
+
+  console.error("[ChartVisionAI] Claude API error", {
+    apiKeyPresent: true,
+    model,
+    isTimeout,
+    errorName: error instanceof Error ? error.name : "unknown",
+    errorMessage: error instanceof Error ? error.message : String(error),
+  });
+}
+
 function warningForClaudeStatus(status: number): string {
-  if (status === 401) return "Claude authentication failed — API 키가 올바르지 않습니다.";
-  if (status === 403) return "Claude access forbidden — 계정 권한을 확인해주세요.";
-  if (status === 429) return "Claude quota exceeded — 요청 한도에 도달했습니다.";
-  if (status >= 500 && status <= 599) return "Claude server error — 잠시 후 다시 시도해주세요.";
+  if (status === 401) return "Claude authentication failed. Mock result returned.";
+  if (status === 403) return "Claude access forbidden. Mock result returned.";
+  if (status === 429) return "Claude rate limit or quota exceeded. Mock result returned.";
+  if (status >= 500 && status <= 599) {
+    return "Claude server error. Mock result returned.";
+  }
   return `Claude API failed (HTTP ${status}). Mock result returned.`;
 }
 
-function warningForNetworkError(err: unknown): string {
+function warningForNetworkError(error: unknown): string {
   const isTimeout =
-    err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
-  if (isTimeout) return "Claude API timed out — 네트워크 상태를 확인해주세요.";
-  return "Claude API network error. Mock result returned.";
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError");
+  return isTimeout
+    ? "Claude API timed out. Mock result returned."
+    : "Claude API failed. Mock result returned.";
 }
 
 function getAnthropicApiKey(): string | null {
@@ -385,16 +482,8 @@ function getAnthropicApiKey(): string | null {
 
 function getProvider(): AnalysisProvider {
   const apiKey = getAnthropicApiKey();
-  const model = process.env.ANTHROPIC_MODEL ?? DEFAULT_CLAUDE_MODEL;
-  if (apiKey) {
-    console.info("[ChartVisionAI] Provider: Claude", { apiKeyPresent: true, model });
-    return new ClaudeProvider(apiKey);
-  }
-  console.warn("[ChartVisionAI] Provider: Mock (ANTHROPIC_API_KEY not set)", { apiKeyPresent: false });
-  return new MockProvider();
+  return apiKey ? new ClaudeProvider(apiKey) : new MockProvider();
 }
-
-// ─── 공개 API ─────────────────────────────────────────────────────────────────
 
 export async function analyzeChartWithAI(
   imageBase64: string,
@@ -412,7 +501,6 @@ export async function detectChartMetaWithAI(
   if (!apiKey) return { symbol: null, timeframe: null, confidence: 0 };
 
   const model = process.env.ANTHROPIC_MODEL ?? DEFAULT_CLAUDE_MODEL;
-  const logCtx = { model, hasApiKey: true };
 
   try {
     const response = await fetch(ANTHROPIC_MESSAGES_URL, {
@@ -425,16 +513,22 @@ export async function detectChartMetaWithAI(
       },
       body: JSON.stringify({
         model,
-        max_tokens: 180,
+        max_tokens: 300,
         temperature: 0,
-        system: "Return only valid JSON. Do not include markdown or extra text.",
+        system: "Use the provided tool to return detected chart metadata.",
+        tools: [META_TOOL],
+        tool_choice: { type: "tool", name: META_TOOL.name },
         messages: [
           {
             role: "user",
             content: [
               {
                 type: "image",
-                source: { type: "base64", media_type: mimeType, data: imageBase64 },
+                source: {
+                  type: "base64",
+                  media_type: mimeType,
+                  data: imageBase64,
+                },
               },
               { type: "text", text: buildMetaPrompt() },
             ],
@@ -444,38 +538,33 @@ export async function detectChartMetaWithAI(
     });
 
     if (!response.ok) {
-      let errorBody: ClaudeErrorBody | null = null;
-      try { errorBody = (await response.json()) as ClaudeErrorBody; } catch { /* ignore */ }
-      logClaudeHttpError(response.status, errorBody, logCtx);
+      await logClaudeHttpError(response, model);
       return { symbol: null, timeframe: null, confidence: 0 };
     }
 
     const json = (await response.json()) as ClaudeMessageResponse;
-    const content = getClaudeText(json);
-    if (!content) return { symbol: null, timeframe: null, confidence: 0 };
+    const raw = getToolInput(json, META_TOOL.name) ?? getTextJsonInput(json);
+    if (typeof raw !== "object" || raw === null) {
+      return { symbol: null, timeframe: null, confidence: 0 };
+    }
 
-    const parsed = JSON.parse(extractJsonText(content)) as Record<string, unknown>;
-    const rawSymbol = typeof parsed.detectedSymbol === "string" ? parsed.detectedSymbol : null;
-    const rawTimeframe = typeof parsed.detectedTimeframe === "string" ? parsed.detectedTimeframe : null;
-    const confidence =
-      typeof parsed.confidence === "number"
-        ? Math.min(100, Math.max(0, Math.round(parsed.confidence)))
-        : 50;
-
+    const parsed = raw as Record<string, unknown>;
+    const rawSymbol =
+      typeof parsed.detectedSymbol === "string" ? parsed.detectedSymbol : null;
+    const rawTimeframe =
+      typeof parsed.detectedTimeframe === "string" ? parsed.detectedTimeframe : null;
+    const confidence = normalizeConfidence(parsed.confidence);
     const symbol = rawSymbol ? normalizeSymbol(rawSymbol) : null;
     const timeframe = rawTimeframe ? normalizeTimeframe(rawTimeframe) : null;
-
     const hasResult = Boolean(symbol || timeframe);
+
     return {
       symbol: symbol || null,
       timeframe,
       confidence: hasResult ? confidence : 0,
     };
-  } catch (err) {
-    logClaudeNetworkError(err, logCtx);
+  } catch (error) {
+    logClaudeNetworkError(error, model);
     return { symbol: null, timeframe: null, confidence: 0 };
   }
 }
-
-// VALID_TIMEFRAMES 는 내부 참조용으로만 사용
-void VALID_TIMEFRAMES;
