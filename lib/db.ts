@@ -288,6 +288,19 @@ export async function resetPasswordWithToken(
   return true;
 }
 
+export async function updateUserPasswordHash(
+  userId: number,
+  passwordHash: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("users")
+    .update({ password_hash: passwordHash })
+    .eq("id", userId);
+
+  if (error) throw new Error(error.message);
+  return true;
+}
+
 function hashResetToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
