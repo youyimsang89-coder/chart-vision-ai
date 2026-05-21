@@ -42,7 +42,6 @@ export interface AnalyzeChartRequest {
   imageBase64: string;
   mimeType: string;
   options: AnalysisOptions;
-  accessPassword?: string;
 }
 
 export interface AnalyzeChartResponse {
@@ -52,13 +51,13 @@ export interface AnalyzeChartResponse {
   result?: AnalysisResult;
   data?: AnalysisResult;
   detected?: DetectedChartMeta;
+  remainingCredits?: number;
   error?: string;
 }
 
 export interface DetectChartMetaRequest {
   imageBase64: string;
   mimeType: string;
-  accessPassword?: string;
 }
 
 export interface DetectChartMetaResponse {
@@ -76,4 +75,38 @@ export interface HistoryItem {
   options: AnalysisOptions;
   result: AnalysisResult;
   thumbnailDataUrl?: string;
+}
+
+// ── 사용자 / 크레딧 타입 ─────────────────────────────────────
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  role: "user" | "admin";
+  credits: number;
+}
+
+export interface CreditTransaction {
+  id: number;
+  amount: number;
+  reason: string;
+  createdAt: number;
+}
+
+export interface UserCreditsResponse {
+  success: boolean;
+  credits: number;
+  transactions: CreditTransaction[];
+  error?: string;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  credits: number;
+  totalAnalyses: number;
+  createdAt: number;
 }

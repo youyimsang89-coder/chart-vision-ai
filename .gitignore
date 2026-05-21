@@ -33,6 +33,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# 사용자 데이터 (DB 파일) - 절대 커밋 금지
+/data/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

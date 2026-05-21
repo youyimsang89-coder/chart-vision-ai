@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth-config";
 import { detectChartMetaWithAI } from "@/lib/analyze-chart";
-import { verifyAccessPassword } from "@/lib/auth";
-import { DetectChartMetaRequest, DetectChartMetaResponse } from "@/lib/types";
+import type { DetectChartMetaResponse } from "@/lib/types";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -24,16 +25,17 @@ function err(
 export async function POST(
   request: NextRequest
 ): Promise<NextResponse<DetectChartMetaResponse>> {
-  let body: DetectChartMetaRequest;
-  try {
-    body = (await request.json()) as DetectChartMetaRequest;
-  } catch {
-    return err("요청 본문이 올바른 JSON 형식이 아닙니다.", 400);
+  // 인증 확인
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return err("로그인이 필요합니다.", 401);
   }
 
-  // 접근 비밀번호 검증
-  if (!verifyAccessPassword(body.accessPassword)) {
-    return err("접근 비밀번호가 올바르지 않습니다.", 401);
+  let body: { imageBase64: string; mimeType: string };
+  try {
+    body = await request.json();
+  } catch {
+    return err("요청 본문이 올바른 JSON 형식이 아닙니다.", 400);
   }
 
   const { imageBase64, mimeType } = body;
@@ -53,13 +55,12 @@ export async function POST(
     const hasResult = Boolean(detected.symbol || detected.timeframe);
     return NextResponse.json({
       success: true,
-      symbol: detected.symbol,
-      timeframe: detected.timeframe,
-      confidence: detected.confidence,
+      symbol: detected.symbol ?? null,
+      timeframe: detected.timeframe ?? null,
+      confidence: detected.confidence ?? 0,
       warning: hasResult ? "" : "자동 인식 실패",
     });
   } catch {
-    // 자동 감지 실패는 치명적이지 않음 — 빈 결과 반환
     return NextResponse.json({
       success: true,
       symbol: null,
