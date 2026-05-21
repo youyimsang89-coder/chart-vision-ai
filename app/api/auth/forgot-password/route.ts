@@ -30,8 +30,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const message =
-    "가입된 이메일이면 비밀번호 재설정 링크를 발송했습니다.";
+  const message = "가입된 이메일이면 비밀번호 재설정 링크를 발송했습니다.";
 
   try {
     const reset = await createPasswordResetToken(email);

@@ -16,6 +16,8 @@ export async function GET() {
       NEXTAUTH_SECRET: hasValue("NEXTAUTH_SECRET"),
       NEXTAUTH_URL: hasValue("NEXTAUTH_URL"),
       ANTHROPIC_API_KEY: hasValue("ANTHROPIC_API_KEY"),
+      RESEND_API_KEY: hasValue("RESEND_API_KEY"),
+      EMAIL_FROM: hasValue("EMAIL_FROM"),
     },
   });
 }

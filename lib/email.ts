@@ -25,9 +25,9 @@ export async function sendPasswordResetEmail({
     body: JSON.stringify({
       from,
       to,
-      subject: "Chart Vision AI 비밀번호 재설정",
+      subject: "Chart Vision AI password reset",
       html: buildPasswordResetHtml(resetUrl),
-      text: `아래 링크에서 비밀번호를 재설정하세요. 이 링크는 30분 동안 유효합니다.\n\n${resetUrl}`,
+      text: `Open this link to reset your Chart Vision AI password. This link is valid for 30 minutes.\n\n${resetUrl}`,
     }),
   });
 
@@ -40,15 +40,15 @@ export async function sendPasswordResetEmail({
 function buildPasswordResetHtml(resetUrl: string): string {
   return `
     <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827">
-      <h2>Chart Vision AI 비밀번호 재설정</h2>
-      <p>아래 버튼을 눌러 새 비밀번호를 설정하세요.</p>
-      <p>이 링크는 30분 동안만 유효합니다.</p>
+      <h2>Chart Vision AI password reset</h2>
+      <p>Click the button below to set a new password.</p>
+      <p>This link is valid for 30 minutes.</p>
       <p>
         <a href="${resetUrl}" style="display:inline-block;background:#10b981;color:#000;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700">
-          비밀번호 재설정
+          Reset password
         </a>
       </p>
-      <p>버튼이 열리지 않으면 아래 주소를 브라우저에 붙여넣으세요.</p>
+      <p>If the button does not open, paste this URL into your browser.</p>
       <p style="word-break:break-all;color:#4b5563">${resetUrl}</p>
     </div>
   `;
