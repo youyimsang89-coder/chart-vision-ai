@@ -265,6 +265,7 @@ export default function HomePage() {
               name={session?.user?.name ?? ""}
               role={session?.user?.role ?? "user"}
               onAdmin={() => router.push("/admin")}
+              onChangePassword={() => router.push("/auth/change-password")}
               onSignOut={() => signOut({ callbackUrl: "/auth/login" })}
             />
           </div>
@@ -384,7 +385,19 @@ export default function HomePage() {
   );
 }
 
-function UserMenu({ name, role, onAdmin, onSignOut }: { name: string; role: string; onAdmin: () => void; onSignOut: () => void }) {
+function UserMenu({
+  name,
+  role,
+  onAdmin,
+  onChangePassword,
+  onSignOut,
+}: {
+  name: string;
+  role: string;
+  onAdmin: () => void;
+  onChangePassword: () => void;
+  onSignOut: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -424,6 +437,15 @@ function UserMenu({ name, role, onAdmin, onSignOut }: { name: string; role: stri
               관리자 대시보드
             </button>
           )}
+          <button
+            onClick={() => { setOpen(false); onChangePassword(); }}
+            className="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586l6.257-6.257A6 6 0 1121 9z" />
+            </svg>
+            비밀번호 변경
+          </button>
           <button
             onClick={() => { setOpen(false); onSignOut(); }}
             className="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-red-400 transition"
