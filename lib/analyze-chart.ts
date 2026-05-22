@@ -40,8 +40,10 @@ const MOCK_RESULTS: AnalysisResult[] = [
     pattern: "상승 채널",
     longView:
       "주요 저항 돌파 후 지지 전환이 확인되면 롱 관점을 참고할 수 있습니다.",
+    longScore: 72,
     shortView:
       "직전 지지 이탈과 약세 캔들이 함께 확인되면 단기 조정 가능성을 참고할 수 있습니다.",
+    shortScore: 38,
     riskSummary:
       "거래량이 부족한 돌파는 실패 가능성이 있습니다. 본 분석은 참고용이며 투자 조언이 아닙니다.",
     confidence: 76,
@@ -53,8 +55,10 @@ const MOCK_RESULTS: AnalysisResult[] = [
     pattern: "대칭 삼각형",
     longView:
       "상단 돌파와 거래량 증가가 동반되면 상승 시나리오를 참고할 수 있습니다.",
+    longScore: 52,
     shortView:
       "하단 이탈 시 박스권 하방 돌파 가능성을 검토할 수 있습니다.",
+    shortScore: 48,
     riskSummary:
       "수렴 구간에서는 방향성이 불확실합니다. 확정적 판단보다 돌파 이후 확인이 중요합니다.",
     confidence: 61,
@@ -66,8 +70,10 @@ const MOCK_RESULTS: AnalysisResult[] = [
     pattern: "하락 쐐기",
     longView:
       "하단 지지와 과매도 신호가 함께 보이면 제한적 반등 가능성을 참고할 수 있습니다.",
+    longScore: 31,
     shortView:
       "주요 저항 실패와 약세 캔들이 확인되면 하락 지속 시나리오를 검토할 수 있습니다.",
+    shortScore: 74,
     riskSummary:
       "전체 흐름은 약세입니다. 추격 진입은 위험할 수 있으며 포지션 크기 관리가 필요합니다.",
     confidence: 83,
@@ -97,7 +103,9 @@ const ANALYSIS_TOOL = {
       resistanceLevels: { type: "array", items: { type: "string" } },
       pattern: { type: "string" },
       longView: { type: "string" },
+      longScore: { type: "number", minimum: 0, maximum: 100 },
       shortView: { type: "string" },
+      shortScore: { type: "number", minimum: 0, maximum: 100 },
       riskSummary: { type: "string" },
       confidence: { type: "number", minimum: 0, maximum: 100 },
     },
@@ -109,7 +117,9 @@ const ANALYSIS_TOOL = {
       "resistanceLevels",
       "pattern",
       "longView",
+      "longScore",
       "shortView",
+      "shortScore",
       "riskSummary",
       "confidence",
     ],
@@ -226,7 +236,10 @@ function buildAnalysisUserPrompt(options: AnalysisOptions): string {
 
 이미지에서 보이는 종목과 타임프레임을 먼저 읽고, 차트 구조를 분석해주세요.
 supportLevels와 resistanceLevels는 이미지에서 읽히는 주요 가격대만 문자열 배열로 반환해주세요.
-confidence는 롱/숏 성공률이 아니라 이미지에서 차트 구조와 주요 레벨을 얼마나 명확히 읽었는지에 대한 0-100 점수입니다.`;
+confidence는 롱/숏 성공률이 아니라 이미지에서 차트 구조와 주요 레벨을 얼마나 명확히 읽었는지에 대한 0-100 점수입니다.
+longScore는 현재 차트 구조에서 롱 시나리오가 얼마나 유리한지에 대한 0-100 점수입니다 (높을수록 롱 유리).
+shortScore는 현재 차트 구조에서 숏 시나리오가 얼마나 유리한지에 대한 0-100 점수입니다 (높을수록 숏 유리).
+longScore + shortScore의 합이 반드시 100일 필요는 없으며 각각 독립적으로 평가해주세요.`;
 }
 
 function buildMetaPrompt(): string {
@@ -291,10 +304,12 @@ function validateAndNormalizeProviderResult(
       value.longView,
       "롱 관점은 지지/저항 재확인 후 참고할 수 있습니다."
     ),
+    longScore: normalizeConfidence(value.longScore),
     shortView: readText(
       value.shortView,
       "숏 관점은 이탈 여부 확인 후 참고할 수 있습니다."
     ),
+    shortScore: normalizeConfidence(value.shortScore),
     riskSummary: readText(
       value.riskSummary,
       "본 분석은 참고용이며 실제 거래 전 별도 검토가 필요합니다."
@@ -416,7 +431,9 @@ function createFallbackResult(
     resistanceLevels: [],
     pattern: "명확한 패턴 없음",
     longView: `${options.symbol} ${options.timeframe} 차트의 롱 관점은 지지/저항 재확인이 필요합니다.`,
+    longScore: 50,
     shortView: `${options.symbol} ${options.timeframe} 차트의 숏 관점은 이탈 여부 확인 후 참고할 수 있습니다.`,
+    shortScore: 50,
     riskSummary: `${reason} 본 결과는 참고용이며 투자 조언이 아닙니다.`,
     confidence: 35,
   };

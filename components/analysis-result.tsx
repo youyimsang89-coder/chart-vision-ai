@@ -27,10 +27,10 @@ function formatResultText(
 지지선: ${result.supportLevels.join(", ") || "없음"}
 저항선: ${result.resistanceLevels.join(", ") || "없음"}
 
-롱 관점 참고:
+롱 관점 참고 (${result.longScore}점):
 ${result.longView}
 
-숏 관점 참고:
+숏 관점 참고 (${result.shortScore}점):
 ${result.shortView}
 
 리스크:
@@ -246,18 +246,44 @@ function AnalysisResultPanel({
           />
         </div>
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-          <div className="mb-2">
+          <div className="mb-2 flex items-center justify-between">
             <Badge color="bg-emerald-500/20 text-emerald-400">
               롱 관점 참고
             </Badge>
+            <span
+              className={`text-lg font-bold tabular-nums ${
+                result.longScore >= 60
+                  ? "text-emerald-400"
+                  : result.longScore >= 40
+                  ? "text-yellow-400"
+                  : "text-zinc-500"
+              }`}
+              aria-label={`롱 점수 ${result.longScore}점`}
+            >
+              {result.longScore}
+              <span className="text-xs font-normal text-zinc-500">점</span>
+            </span>
           </div>
           <p className="text-sm leading-relaxed text-zinc-300">
             {result.longView}
           </p>
         </div>
         <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
-          <div className="mb-2">
+          <div className="mb-2 flex items-center justify-between">
             <Badge color="bg-red-500/20 text-red-400">숏 관점 참고</Badge>
+            <span
+              className={`text-lg font-bold tabular-nums ${
+                result.shortScore >= 60
+                  ? "text-red-400"
+                  : result.shortScore >= 40
+                  ? "text-yellow-400"
+                  : "text-zinc-500"
+              }`}
+              aria-label={`숏 점수 ${result.shortScore}점`}
+            >
+              {result.shortScore}
+              <span className="text-xs font-normal text-zinc-500">점</span>
+            </span>
           </div>
           <p className="text-sm leading-relaxed text-zinc-300">
             {result.shortView}

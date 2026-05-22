@@ -19,7 +19,9 @@ export interface AnalysisResult {
   resistanceLevels: string[];
   pattern: string;
   longView: string;
+  longScore: number;
   shortView: string;
+  shortScore: number;
   riskSummary: string;
   confidence: number;
 }
