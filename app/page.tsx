@@ -423,7 +423,6 @@ export default function HomePage() {
           </div>
         </div>
         {activeTab === "analyze" && <RiskDisclaimer />}
-        {activeTab === "analyze" && </div>}
       </main>
     </div>
   );
