@@ -9,8 +9,6 @@ import AnalysisResultPanel from "@/components/analysis-result";
 import AnalysisHistory from "@/components/analysis-history";
 import RiskDisclaimer from "@/components/risk-disclaimer";
 import dynamic from "next/dynamic";
-const SignalTracker = dynamic(() => import("@/components/signal-tracker"), { ssr: false });
-const CreditPurchaseModal = dynamic(() => import("@/components/credit-purchase-modal"), { ssr: false });
 import { useAnalysisHistory } from "@/hooks/use-analysis-history";
 import { CompressedImage, validateImageFile } from "@/lib/image-utils";
 import type {
@@ -20,6 +18,9 @@ import type {
   DetectChartMetaResponse,
   HistoryItem,
 } from "@/lib/types";
+
+const SignalTracker = dynamic(() => import("@/components/signal-tracker"), { ssr: false });
+const CreditPurchaseModal = dynamic(() => import("@/components/credit-purchase-modal"), { ssr: false });
 
 const DEFAULT_OPTIONS: AnalysisOptions = {
   symbol: "AAPL",
