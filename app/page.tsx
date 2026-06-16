@@ -8,6 +8,9 @@ import AnalysisOptionsPanel from "@/components/analysis-options";
 import AnalysisResultPanel from "@/components/analysis-result";
 import AnalysisHistory from "@/components/analysis-history";
 import RiskDisclaimer from "@/components/risk-disclaimer";
+import dynamic from "next/dynamic";
+const SignalTracker = dynamic(() => import("@/components/signal-tracker"), { ssr: false });
+const CreditPurchaseModal = dynamic(() => import("@/components/credit-purchase-modal"), { ssr: false });
 import { useAnalysisHistory } from "@/hooks/use-analysis-history";
 import { CompressedImage, validateImageFile } from "@/lib/image-utils";
 import type {
@@ -19,7 +22,7 @@ import type {
 } from "@/lib/types";
 
 const DEFAULT_OPTIONS: AnalysisOptions = {
-  symbol: "BTCUSDT",
+  symbol: "AAPL",
   timeframe: "1h",
   purpose: "daytrading",
 };
@@ -32,6 +35,9 @@ export default function HomePage() {
   const { data: session, status: authStatus } = useSession();
   const router = useRouter();
   const [credits, setCredits] = useState<number | null>(null);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<"analyze" | "signals">("analyze");
+  const [pendingSignalId, setPendingSignalId] = useState<number | null>(null);
 
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string | null>(null);
@@ -194,7 +200,7 @@ export default function HomePage() {
       clearTimeout(timeoutId);
       if (response.status === 401) { router.replace("/auth/login"); throw new Error("로그인이 필요합니다."); }
       if (response.status === 402) throw new Error("분석 크레딧이 부족합니다. 관리자에게 충전을 요청하세요.");
-      const json = (await response.json()) as AnalyzeChartResponse & { remainingCredits?: number };
+      const json = (await response.json()) as AnalyzeChartResponse & { remainingCredits?: number; signalId?: number };
       const analysisResult = json.result ?? json.data;
       if (!response.ok || !json.success || !analysisResult) throw new Error(json.error ?? "분석에 실패했습니다.");
       if (typeof json.remainingCredits === "number") setCredits(json.remainingCredits);
@@ -208,6 +214,7 @@ export default function HomePage() {
       if (json.detected?.timeframe) setOptions((p) => ({ ...p, timeframe: json.detected!.timeframe! }));
       setResult(analysisResult); setStatus("success");
       if (json.warning) setWarningMsg(json.warning);
+      if (typeof json.signalId === "number") setPendingSignalId(json.signalId);
       addToHistory({ options: nextOptions, result: analysisResult, thumbnailDataUrl });
     } catch (error: unknown) {
       clearTimeout(timeoutId);
@@ -254,12 +261,23 @@ export default function HomePage() {
             <h1 className="text-base font-bold tracking-tight">Chart Vision <span className="text-emerald-400">AI</span></h1>
           </div>
           <div className="flex items-center gap-3">
-            <div className={"flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold " + creditColor}>
-              <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
-              </svg>
-              <span>{credits === null ? "..." : credits.toLocaleString()}</span>
-              <span className="opacity-60">크레딧</span>
+            <div className="flex items-center gap-1.5">
+              <div className={"flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold " + creditColor}>
+                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                </svg>
+                <span>{credits === null ? "..." : credits.toLocaleString()}</span>
+                <span className="opacity-60">크레딧</span>
+              </div>
+              <button
+                onClick={() => setShowPurchaseModal(true)}
+                className="hidden sm:flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 transition hover:border-emerald-400 hover:text-emerald-300"
+              >
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                충전
+              </button>
             </div>
             <UserMenu
               name={session?.user?.name ?? ""}
@@ -272,8 +290,28 @@ export default function HomePage() {
         </div>
       </header>
 
+      {showPurchaseModal && <CreditPurchaseModal onClose={() => setShowPurchaseModal(false)} />}
+
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        {/* 탭 */}
+        <div className="mb-6 flex gap-1 rounded-xl border border-zinc-800 bg-zinc-900 p-1">
+          {(["analyze", "signals"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
+                activeTab === tab
+                  ? "bg-zinc-800 text-zinc-100 shadow"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {tab === "analyze" ? "차트 분석" : "적중률 트래킹"}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "signals" && <SignalTracker />}
+        {activeTab === "analyze" && <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
           <div className="space-y-5 lg:col-span-2">
             <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
               <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-400">차트 업로드</h2>
@@ -364,7 +402,12 @@ export default function HomePage() {
               </div>
             )}
             {status === "success" && result && (
-              <AnalysisResultPanel result={result} options={options} onReset={handleReset} />
+              <AnalysisResultPanel
+                result={result}
+                options={options}
+                onReset={handleReset}
+                onRegisterSignal={pendingSignalId ? () => setActiveTab("signals") : undefined}
+              />
             )}
             {status === "idle" && !result && (
               <div className="flex h-full min-h-[400px] flex-col items-center justify-center text-center">
@@ -379,7 +422,8 @@ export default function HomePage() {
             )}
           </div>
         </div>
-        <RiskDisclaimer />
+        {activeTab === "analyze" && <RiskDisclaimer />}
+        {activeTab === "analyze" && </div>}
       </main>
     </div>
   );

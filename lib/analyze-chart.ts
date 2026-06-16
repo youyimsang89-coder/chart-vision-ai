@@ -4,6 +4,7 @@ import {
   AnalysisProvider,
   AnalysisResult,
   DetectedChartMeta,
+  MarketPriceContext,
   Timeframe,
 } from "./types";
 
@@ -88,7 +89,7 @@ const PURPOSE_LABELS: Record<AnalysisOptions["purpose"], string> = {
 
 const ANALYSIS_TOOL = {
   name: "return_chart_analysis",
-  description: "Return a structured chart analysis result.",
+  description: "Return a structured chart analysis result with TP/SL levels and candlestick patterns.",
   input_schema: {
     type: "object",
     additionalProperties: false,
@@ -102,12 +103,45 @@ const ANALYSIS_TOOL = {
       supportLevels: { type: "array", items: { type: "string" } },
       resistanceLevels: { type: "array", items: { type: "string" } },
       pattern: { type: "string" },
+      candlePatterns: {
+        type: "array",
+        items: { type: "string" },
+        description: "List of detected candlestick patterns in Korean (e.g. 망치형, 도지, 상승 삼병법, 하락 장악형, 샛별형, 저녁별형, 핀바)"
+      },
       longView: { type: "string" },
       longScore: { type: "number", minimum: 0, maximum: 100 },
       shortView: { type: "string" },
       shortScore: { type: "number", minimum: 0, maximum: 100 },
       riskSummary: { type: "string" },
       confidence: { type: "number", minimum: 0, maximum: 100 },
+      entryZoneLong: {
+        type: ["string", "null"],
+        description: "Long entry price zone string (e.g. '67,200 ~ 67,500'). Null if chart trend doesn't favor a long."
+      },
+      entryZoneShort: {
+        type: ["string", "null"],
+        description: "Short entry price zone string (e.g. '69,000 ~ 69,300'). Null if chart trend doesn't favor a short."
+      },
+      tp1: {
+        type: ["string", "null"],
+        description: "First take-profit price level string based on nearby resistance/support."
+      },
+      tp2: {
+        type: ["string", "null"],
+        description: "Second take-profit price level string (further target)."
+      },
+      stopLoss: {
+        type: ["string", "null"],
+        description: "Stop-loss price level string based on structure (swing low/high or key level)."
+      },
+      riskReward: {
+        type: ["string", "null"],
+        description: "Risk-reward ratio string (e.g. '1:2.5') calculated from entry zone, TP1, and stop loss."
+      },
+      higherTimeframeContext: {
+        type: ["string", "null"],
+        description: "Brief comment on the implied higher-timeframe trend context visible in the chart (e.g. 일봉 상승 추세 유지, 4H 저항 근처). 1-2 sentences."
+      },
     },
     required: [
       "detectedSymbol",
@@ -116,12 +150,20 @@ const ANALYSIS_TOOL = {
       "supportLevels",
       "resistanceLevels",
       "pattern",
+      "candlePatterns",
       "longView",
       "longScore",
       "shortView",
       "shortScore",
       "riskSummary",
       "confidence",
+      "entryZoneLong",
+      "entryZoneShort",
+      "tp1",
+      "tp2",
+      "stopLoss",
+      "riskReward",
+      "higherTimeframeContext",
     ],
   },
 } as const;
@@ -154,7 +196,8 @@ class ClaudeProvider implements AnalysisProvider {
   async analyze(
     imageBase64: string,
     mimeType: string,
-    options: AnalysisOptions
+    options: AnalysisOptions,
+    marketPrice?: MarketPriceContext
   ): Promise<ProviderResult> {
     const model = process.env.ANTHROPIC_MODEL ?? DEFAULT_CLAUDE_MODEL;
 
@@ -186,7 +229,7 @@ class ClaudeProvider implements AnalysisProvider {
                     data: imageBase64,
                   },
                 },
-                { type: "text", text: buildAnalysisUserPrompt(options) },
+                { type: "text", text: buildAnalysisUserPrompt(options, marketPrice) },
               ],
             },
           ],
@@ -220,31 +263,65 @@ class ClaudeProvider implements AnalysisProvider {
 }
 
 function buildAnalysisSystemPrompt(): string {
-  return `You are a chart image analysis assistant.
+  return `You are a professional chart image analysis assistant specializing in technical analysis.
+The chart may be for stocks, crypto, futures, ETFs, indices, or forex. Analyze what is visible in the image; do not assume it is crypto-only.
 Use the provided tool to return a structured result.
 The output is reference-only technical analysis, not investment advice.
 Do not use definitive buy/sell instructions or guaranteed profit language.
+If a current market price context is provided, use it to keep BTC/KRW price levels on the correct scale. Do not invent stale BTC/KRW prices.
 Use conditional Korean wording such as "확인되면", "참고할 수 있습니다", "가능성이 있습니다".
-Analyze both long and short scenarios. Do not claim one side is certain.`;
+Analyze both long and short scenarios. Do not claim one side is certain.
+
+ADVANCED ANALYSIS REQUIREMENTS:
+1. Candlestick patterns: Identify specific candlestick patterns visible in the chart (e.g., 망치형, 역망치형, 도지, 핀바, 상승 삼병법, 하락 삼병법, 샛별형, 저녁별형, 상승 장악형, 하락 장악형, 상승 집게형, 하락 집게형). Return as an array. Empty array if none are clear.
+2. Entry zones: Based on the chart structure, suggest a reasonable entry price zone for both long and short scenarios. Use key support/resistance levels. Return null if no clear setup.
+3. TP/SL levels: Calculate TP1 (first target), TP2 (second target), and StopLoss based on the chart structure (swing highs/lows, key levels, measured moves). These should be derived from what's visible in the chart.
+4. Risk/Reward: Calculate the R:R ratio from the mid-point of entry zone to TP1 vs StopLoss. Format as "1:X.X".
+5. Higher timeframe context: Describe what the implied higher timeframe trend looks like based on the overall chart structure visible.`;
 }
 
-function buildAnalysisUserPrompt(options: AnalysisOptions): string {
+function buildAnalysisUserPrompt(
+  options: AnalysisOptions,
+  marketPrice?: MarketPriceContext
+): string {
+  const marketPricePrompt = marketPrice
+    ? `
+현재 시세 기준:
+- ${marketPrice.symbol} ${marketPrice.market}: ${marketPrice.price.toLocaleString("ko-KR")} ${marketPrice.currency}
+- 출처: ${marketPrice.source}
+- 조회 시각: ${marketPrice.fetchedAt}
+
+BTC 원화 가격대를 언급할 때는 위 현재가와 같은 스케일을 사용하세요. 현재가가 9천만원대라면 지지/저항도 차트에서 명확히 보이는 경우가 아니라면 1억1천만원대처럼 멀리 벗어난 값으로 쓰지 마세요. 차트가 USDT/USD 기준이면 가격 문자열에 USDT/USD 단위를 붙이고, KRW로 환산해 말할 때만 위 KRW 현재가를 기준으로 보정하세요.
+`
+    : "";
+
   return `현재 사용자가 선택한 값:
 종목: ${options.symbol}
 타임프레임: ${options.timeframe}
 분석 목적: ${PURPOSE_LABELS[options.purpose]}
+${marketPricePrompt}
 
 이미지에서 보이는 종목과 타임프레임을 먼저 읽고, 차트 구조를 분석해주세요.
-supportLevels와 resistanceLevels는 이미지에서 읽히는 주요 가격대만 문자열 배열로 반환해주세요.
-confidence는 롱/숏 성공률이 아니라 이미지에서 차트 구조와 주요 레벨을 얼마나 명확히 읽었는지에 대한 0-100 점수입니다.
-longScore는 현재 차트 구조에서 롱 시나리오가 얼마나 유리한지에 대한 0-100 점수입니다 (높을수록 롱 유리).
-shortScore는 현재 차트 구조에서 숏 시나리오가 얼마나 유리한지에 대한 0-100 점수입니다 (높을수록 숏 유리).
-longScore + shortScore의 합이 반드시 100일 필요는 없으며 각각 독립적으로 평가해주세요.`;
+
+[기본 분석]
+- supportLevels, resistanceLevels: 이미지에서 읽히는 주요 가격대만 문자열 배열로 반환
+- pattern: 전체 차트 패턴 (예: 상승 채널, 삼각수렴, 헤드앤숄더 등)
+- trend: 현재 추세 방향과 강도
+- confidence: 차트 구조를 얼마나 명확히 읽었는지 0-100 점수 (롱/숏 성공률 아님)
+- longScore/shortScore: 각 시나리오의 유리함 0-100 (합이 100일 필요 없음, 독립 평가)
+
+[고급 분석 - 중요]
+- candlePatterns: 최근 캔들스틱 패턴 감지 (망치형, 도지, 핀바, 상승 삼병법 등). 명확한 것만.
+- entryZoneLong/entryZoneShort: 차트 구조에서 적절한 진입 구간 (지지/저항 기반). 유리하지 않으면 null.
+- tp1: 1차 목표가 (가까운 저항/지지). tp2: 2차 목표가 (더 먼 목표).
+- stopLoss: 구조적 손절가 (스윙 고점/저점 또는 주요 레벨 기반).
+- riskReward: 진입구간 중간~tp1 vs 손절 기준 R:R 비율 (예: "1:2.3")
+- higherTimeframeContext: 차트에서 보이는 상위 타임프레임 컨텍스트 1-2문장`;
 }
 
 function buildMetaPrompt(): string {
   return `이미지에서 보이는 트레이딩 종목과 캔들 타임프레임만 읽어주세요.
-예: BTCUSDT, BTCUSDT.P, BTC/USDT, BINANCE:BTCUSDT, 1m, 5m, 15m, 1h, 4h, 1D.
+예: AAPL, TSLA, 005930, 005930.KS, KOSPI, SPY, BTCUSDT, BTCUSDT.P, BTC/USDT, BINANCE:BTCUSDT, 1m, 5m, 15m, 1h, 4h, 1D.
 확실하지 않으면 null을 반환하세요.`;
 }
 
@@ -300,6 +377,7 @@ function validateAndNormalizeProviderResult(
     supportLevels: readStringArray(value.supportLevels),
     resistanceLevels: readStringArray(value.resistanceLevels),
     pattern: readText(value.pattern, "명확한 패턴 없음"),
+    candlePatterns: readStringArray(value.candlePatterns),
     longView: readText(
       value.longView,
       "롱 관점은 지지/저항 재확인 후 참고할 수 있습니다."
@@ -315,6 +393,13 @@ function validateAndNormalizeProviderResult(
       "본 분석은 참고용이며 실제 거래 전 별도 검토가 필요합니다."
     ),
     confidence: normalizeConfidence(value.confidence),
+    entryZoneLong: readOptionalText(value.entryZoneLong),
+    entryZoneShort: readOptionalText(value.entryZoneShort),
+    tp1: readOptionalText(value.tp1),
+    tp2: readOptionalText(value.tp2),
+    stopLoss: readOptionalText(value.stopLoss),
+    riskReward: readOptionalText(value.riskReward),
+    higherTimeframeContext: readOptionalText(value.higherTimeframeContext),
   };
 
   const detected = normalizeDetectedMeta(value, options);
@@ -379,6 +464,10 @@ function normalizeSymbol(raw: string): string {
   }
 
   return s;
+}
+
+function readOptionalText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function readText(value: unknown, fallback: string): string {
@@ -505,9 +594,10 @@ function getProvider(): AnalysisProvider {
 export async function analyzeChartWithAI(
   imageBase64: string,
   mimeType: string,
-  options: AnalysisOptions
+  options: AnalysisOptions,
+  marketPrice?: MarketPriceContext
 ): Promise<ProviderResult> {
-  return getProvider().analyze(imageBase64, mimeType, options);
+  return getProvider().analyze(imageBase64, mimeType, options, marketPrice);
 }
 
 export async function detectChartMetaWithAI(

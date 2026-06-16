@@ -1,59 +1,25 @@
-[detect-chart-meta] Error: OpenAI API 오류 (429): {
-    "error": {
-        "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/gu
-    at detectChartMetaWithAI (webpack-internal:///(rsc)/./lib/analyze-chart.ts:401:15)
-    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
-    at async POST (webpack-internal:///(rsc)/./app/api/detect-chart-meta/route.ts:42:26)
-    at async C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-route.runtime.dev.js:6:57228
-    at async eT.execute (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-route.runtime.dev.js:6:46851)
-    at async eT.handle (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-route.runtime.dev.js:6:58760)
-    at async doRender (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\base-server.js:1366:42)
-    at async cacheEntry.responseCache.get.routeKind (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\base-server.js:1588:28)
-    at async DevServer.renderToResponseWithComponentsImpl (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\base-server.js:1496:28)
-    at async DevServer.renderPageComponent (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\base-server.js:1924:24)
-    at async DevServer.renderToResponseImpl (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\base-server.js:1962:32)
-    at async DevServer.pipeImpl (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\base-server.js:922:25)
-    at async NextNodeServer.handleCatchallRenderRequest (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\next-server.js:272:17)
-    at async DevServer.handleRequestImpl (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\base-server.js:818:17)
-    at async C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\dev\next-dev-server.js:339:20
-    at async Span.traceAsyncFn (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\trace\trace.js:154:20)
-    at async DevServer.handleRequest (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\dev\next-dev-server.js:336:24)
-    at async invokeRender (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\lib\router-server.js:179:21)
-    at async handleRequest (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\lib\router-server.js:359:24)
-    at async requestHandlerImpl (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\lib\router-server.js:383:13)
-    at async Server.requestListener (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\server\lib\start-server.js:141:13)
- ⨯ TypeError: __webpack_modules__[moduleId] is not a function
-    at Object.__webpack_require__ [as require] (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\.next\server\webpack-runtime.js:33:42)
-digest: "4091871584"
-TypeError: __webpack_modules__[moduleId] is not a function
-    at Object.__webpack_require__ [as require] (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\.next\server\webpack-runtime.js:33:42)
-    at require (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:20064)
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108376
-    at ea (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108583)
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:110813
-    at Object._fromJSON (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:111370)
-    at JSON.parse (<anonymous>)
-    at ec (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:109078)
-    at eo (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108123)
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115291
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115308
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115341
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115358
-    at t (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115581)
- ⨯ TypeError: __webpack_modules__[moduleId] is not a function
-    at Object.__webpack_require__ [as require] (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\.next\server\webpack-runtime.js:33:42)
-    at require (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:40:20064)
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108376
-    at ea (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108583)
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:110813
-    at Object._fromJSON (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:111370)
-    at JSON.parse (<anonymous>)
-    at ec (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:109078)
-    at eo (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:108123)
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115291
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115308
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115341
-    at C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115358
-    at t (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:115581) {
-  page: '/'
+The user aborted a request.
+
+Retrying 1/3...
+The user aborted a request.
+
+Retrying 2/3...
+The user aborted a request.
+
+Retrying 3/3...
+AbortError: The user aborted a request.
+    at abort (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\node-fetch\index.js:1:65594)
+    at AbortSignal.abortAndFinalize (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\node-fetch\index.js:1:65814)
+    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:843:20)
+    at AbortSignal.dispatchEvent (node:internal/event_target:776:26)
+    at runAbort (node:internal/abort_controller:488:10)
+    at abortSignal (node:internal/abort_controller:459:3)
+    at AbortController.abort (node:internal/abort_controller:507:5)
+    at Timeout.<anonymous> (C:\Users\youyi\OneDrive\문서\Claude\Projects\차트분석 프로그램\node_modules\next\dist\compiled\@next\font\dist\google\fetch-css-from-google-fonts.js:44:47)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7) {
+  type: 'aborted'
 }
+ ⨯ Failed to download `Inter` from Google Fonts. Using fallback font instead.
+
+Failed to fetch `Inter` from Google Fonts.}

@@ -3,14 +3,47 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-config";
 import { analyzeChartWithAI } from "@/lib/analyze-chart";
-import { deductCredit, logAnalysis, getUserById } from "@/lib/db";
-import type { AnalyzeChartResponse, AnalysisOptions } from "@/lib/types";
+import { deductCredit, logAnalysis, getUserById, createSignalResult } from "@/lib/db";
+import type { AnalyzeChartResponse, AnalysisOptions, MarketPriceContext } from "@/lib/types";
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg","image/jpg","image/png","image/webp"]);
 const MAX_BASE64_CHARS = Math.ceil(10 * 1024 * 1024 * (4 / 3)) + 100;
+const UPBIT_TICKER_URL = "https://api.upbit.com/v1/ticker?markets=KRW-BTC";
 
 function err(message: string, status: number): NextResponse<AnalyzeChartResponse> {
   return NextResponse.json({ success: false, error: message }, { status });
+}
+
+function isBitcoinSymbol(symbol: string): boolean {
+  return symbol.toUpperCase().includes("BTC");
+}
+
+async function fetchBtcKrwPriceContext(): Promise<MarketPriceContext | undefined> {
+  try {
+    const response = await fetch(UPBIT_TICKER_URL, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(3000),
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) return undefined;
+
+    const data = (await response.json()) as Array<{ market?: string; trade_price?: number }>;
+    const ticker = Array.isArray(data) ? data[0] : undefined;
+    if (!ticker || ticker.market !== "KRW-BTC" || typeof ticker.trade_price !== "number") {
+      return undefined;
+    }
+
+    return {
+      symbol: "BTC",
+      market: "KRW-BTC",
+      price: ticker.trade_price,
+      currency: "KRW",
+      source: "Upbit",
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeChartResponse>> {
@@ -52,15 +85,37 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeCh
 
   try {
     const analysisOptions: AnalysisOptions = { symbol: symbol.toUpperCase(), timeframe: options.timeframe, purpose: options.purpose };
-    const { result, detected, mode, warning } = await analyzeChartWithAI(imageBase64, mimeType, analysisOptions);
+    const marketPrice = isBitcoinSymbol(analysisOptions.symbol)
+      ? await fetchBtcKrwPriceContext()
+      : undefined;
+    const { result, detected, mode, warning } = await analyzeChartWithAI(imageBase64, mimeType, analysisOptions, marketPrice);
 
     await deductCredit(userId);
-    await logAnalysis(userId, symbol.toUpperCase(), options.timeframe, options.purpose, mode);
+    const [logResult] = await Promise.all([
+      logAnalysis(userId, symbol.toUpperCase(), options.timeframe, options.purpose, mode),
+    ]);
+
+    // 분석 완료 시 시그널 트래킹 자동 등록 (결과 미결 상태로)
+    let signalId: number | undefined;
+    try {
+      const signal = await createSignalResult(userId, {
+        symbol: symbol.toUpperCase(),
+        timeframe: options.timeframe,
+        purpose: options.purpose,
+        longScore: result.longScore,
+        shortScore: result.shortScore,
+      });
+      signalId = signal.id;
+    } catch {
+      // 시그널 등록 실패는 분석 결과에 영향 없음
+    }
+
+    void logResult;
 
     const freshUser = await getUserById(userId);
     const remainingCredits = freshUser?.credits ?? 0;
 
-    return NextResponse.json({ success: true, mode, warning, result, data: result, detected, remainingCredits });
+    return NextResponse.json({ success: true, mode, warning, result, data: result, detected, remainingCredits, signalId });
   } catch {
     return err("분석 중 알 수 없는 오류가 발생했습니다.", 500);
   }

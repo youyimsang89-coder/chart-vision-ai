@@ -8,6 +8,15 @@ export interface AnalysisOptions {
   purpose: Purpose;
 }
 
+export interface MarketPriceContext {
+  symbol: string;
+  market: string;
+  price: number;
+  currency: "KRW";
+  source: string;
+  fetchedAt: string;
+}
+
 export interface DetectedChartMeta {
   symbol?: string;
   timeframe?: Timeframe;
@@ -18,19 +27,36 @@ export interface AnalysisResult {
   supportLevels: string[];
   resistanceLevels: string[];
   pattern: string;
+  /** 주요 캔들 패턴 목록 (예: ["망치형", "상승 삼병법", "도지"]) */
+  candlePatterns?: string[];
   longView: string;
   longScore: number;
   shortView: string;
   shortScore: number;
   riskSummary: string;
   confidence: number;
+  /** 롱 진입 권장 구간 (예: "67,200 ~ 67,500") */
+  entryZoneLong?: string;
+  /** 숏 진입 권장 구간 */
+  entryZoneShort?: string;
+  /** 목표가 1 (첫 번째 익절) */
+  tp1?: string;
+  /** 목표가 2 (두 번째 익절) */
+  tp2?: string;
+  /** 손절가 */
+  stopLoss?: string;
+  /** 리스크/리워드 비율 (예: "1:2.5") */
+  riskReward?: string;
+  /** 멀티 타임프레임 컨텍스트 (상위 타임프레임 추세 요약) */
+  higherTimeframeContext?: string;
 }
 
 export interface AnalysisProvider {
   analyze(
     imageBase64: string,
     mimeType: string,
-    options: AnalysisOptions
+    options: AnalysisOptions,
+    marketPrice?: MarketPriceContext
   ): Promise<{
     result: AnalysisResult;
     mode: AnalysisMode;

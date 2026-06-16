@@ -71,6 +71,53 @@ BEGIN
 END;
 $$;
 
+-- ============================================================
+-- 적중률 트래킹: signal_results 테이블
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.signal_results (
+  id              BIGSERIAL PRIMARY KEY,
+  analysis_log_id BIGINT REFERENCES public.analysis_logs(id) ON DELETE SET NULL,
+  user_id         BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  symbol          TEXT NOT NULL,
+  timeframe       TEXT NOT NULL,
+  purpose         TEXT NOT NULL,
+  long_score      INTEGER NOT NULL,
+  short_score     INTEGER NOT NULL,
+  -- 시그널 방향: 'long' | 'short' (사용자가 어느 쪽으로 매매했는지)
+  signal_direction TEXT CHECK (signal_direction IN ('long', 'short')),
+  -- 결과: 'win' | 'loss' | 'break_even' | null (미결)
+  outcome         TEXT CHECK (outcome IN ('win', 'loss', 'break_even')),
+  note            TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_signal_results_user_id ON public.signal_results(user_id);
+CREATE INDEX IF NOT EXISTS idx_signal_results_created ON public.signal_results(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_signal_results_symbol ON public.signal_results(symbol);
+
+ALTER TABLE public.signal_results DISABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- Stripe 결제: payment_orders 테이블
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.payment_orders (
+  id                  BIGSERIAL PRIMARY KEY,
+  user_id             BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  stripe_session_id   TEXT UNIQUE NOT NULL,
+  stripe_payment_intent TEXT,
+  credits_to_add      INTEGER NOT NULL,
+  amount_krw          INTEGER NOT NULL,
+  status              TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'failed', 'refunded')),
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  paid_at             TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_orders_user_id ON public.payment_orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_payment_orders_session ON public.payment_orders(stripe_session_id);
+
+ALTER TABLE public.payment_orders DISABLE ROW LEVEL SECURITY;
+
 CREATE OR REPLACE FUNCTION public.decrement_credit_safe(p_user_id BIGINT)
 RETURNS BOOLEAN
 LANGUAGE plpgsql

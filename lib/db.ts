@@ -420,6 +420,229 @@ export async function getAllAnalysisLogs(
   });
 }
 
+// ── 적중률 트래킹 ────────────────────────────────────────────
+
+export interface DbSignalResult {
+  id: number;
+  analysisLogId: number | null;
+  userId: number;
+  symbol: string;
+  timeframe: string;
+  purpose: string;
+  longScore: number;
+  shortScore: number;
+  signalDirection: "long" | "short" | null;
+  outcome: "win" | "loss" | "break_even" | null;
+  note: string | null;
+  createdAt: number;
+  resolvedAt: number | null;
+}
+
+type SignalResultRow = {
+  id: number;
+  analysis_log_id: number | null;
+  user_id: number;
+  symbol: string;
+  timeframe: string;
+  purpose: string;
+  long_score: number;
+  short_score: number;
+  signal_direction: "long" | "short" | null;
+  outcome: "win" | "loss" | "break_even" | null;
+  note: string | null;
+  created_at: string;
+  resolved_at: string | null;
+};
+
+function toDbSignal(row: SignalResultRow): DbSignalResult {
+  return {
+    id: row.id,
+    analysisLogId: row.analysis_log_id,
+    userId: row.user_id,
+    symbol: row.symbol,
+    timeframe: row.timeframe,
+    purpose: row.purpose,
+    longScore: row.long_score,
+    shortScore: row.short_score,
+    signalDirection: row.signal_direction,
+    outcome: row.outcome,
+    note: row.note,
+    createdAt: new Date(row.created_at).getTime(),
+    resolvedAt: row.resolved_at ? new Date(row.resolved_at).getTime() : null,
+  };
+}
+
+export async function createSignalResult(
+  userId: number,
+  data: {
+    analysisLogId?: number;
+    symbol: string;
+    timeframe: string;
+    purpose: string;
+    longScore: number;
+    shortScore: number;
+    signalDirection?: "long" | "short";
+  }
+): Promise<DbSignalResult> {
+  const { data: row, error } = await supabase
+    .from("signal_results")
+    .insert({
+      user_id: userId,
+      analysis_log_id: data.analysisLogId ?? null,
+      symbol: data.symbol,
+      timeframe: data.timeframe,
+      purpose: data.purpose,
+      long_score: data.longScore,
+      short_score: data.shortScore,
+      signal_direction: data.signalDirection ?? null,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return toDbSignal(row as SignalResultRow);
+}
+
+export async function resolveSignalResult(
+  signalId: number,
+  userId: number,
+  outcome: "win" | "loss" | "break_even",
+  signalDirection: "long" | "short",
+  note?: string
+): Promise<DbSignalResult | null> {
+  const { data, error } = await supabase
+    .from("signal_results")
+    .update({
+      outcome,
+      signal_direction: signalDirection,
+      note: note ?? null,
+      resolved_at: new Date().toISOString(),
+    })
+    .eq("id", signalId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error) return null;
+  return toDbSignal(data as SignalResultRow);
+}
+
+export async function getUserSignalResults(
+  userId: number,
+  limit = 50
+): Promise<DbSignalResult[]> {
+  const { data, error } = await supabase
+    .from("signal_results")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SignalResultRow[]).map(toDbSignal);
+}
+
+export interface SignalStats {
+  total: number;
+  resolved: number;
+  wins: number;
+  losses: number;
+  breakEvens: number;
+  winRate: number; // 0-100 %
+  bySymbol: { symbol: string; total: number; wins: number; winRate: number }[];
+}
+
+export async function getUserSignalStats(userId: number): Promise<SignalStats> {
+  const { data, error } = await supabase
+    .from("signal_results")
+    .select("*")
+    .eq("user_id", userId);
+
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as SignalResultRow[];
+
+  const total = rows.length;
+  const resolved = rows.filter((r) => r.outcome !== null).length;
+  const wins = rows.filter((r) => r.outcome === "win").length;
+  const losses = rows.filter((r) => r.outcome === "loss").length;
+  const breakEvens = rows.filter((r) => r.outcome === "break_even").length;
+  const winRate = resolved > 0 ? Math.round((wins / resolved) * 100) : 0;
+
+  // 종목별 집계
+  const symbolMap = new Map<string, { total: number; wins: number }>();
+  for (const r of rows) {
+    if (!r.outcome) continue;
+    const s = symbolMap.get(r.symbol) ?? { total: 0, wins: 0 };
+    s.total++;
+    if (r.outcome === "win") s.wins++;
+    symbolMap.set(r.symbol, s);
+  }
+  const bySymbol = Array.from(symbolMap.entries())
+    .map(([symbol, s]) => ({
+      symbol,
+      total: s.total,
+      wins: s.wins,
+      winRate: Math.round((s.wins / s.total) * 100),
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 10);
+
+  return { total, resolved, wins, losses, breakEvens, winRate, bySymbol };
+}
+
+// ── 결제 ───────────────────────────────────────────────────────
+
+export async function createPaymentOrder(
+  userId: number,
+  stripeSessionId: string,
+  creditsToAdd: number,
+  amountKrw: number
+): Promise<void> {
+  const { error } = await supabase.from("payment_orders").insert({
+    user_id: userId,
+    stripe_session_id: stripeSessionId,
+    credits_to_add: creditsToAdd,
+    amount_krw: amountKrw,
+    status: "pending",
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function fulfillPaymentOrder(stripeSessionId: string): Promise<boolean> {
+  // 이미 paid 처리됐으면 중복 실행 방지
+  const { data: existing } = await supabase
+    .from("payment_orders")
+    .select("*")
+    .eq("stripe_session_id", stripeSessionId)
+    .maybeSingle();
+
+  if (!existing || existing.status === "paid") return false;
+
+  const { error: updateError } = await supabase
+    .from("payment_orders")
+    .update({ status: "paid", paid_at: new Date().toISOString() })
+    .eq("stripe_session_id", stripeSessionId);
+
+  if (updateError) throw new Error(updateError.message);
+
+  // 크레딧 지급
+  const { error: creditError } = await supabase.rpc("increment_credits", {
+    p_user_id: existing.user_id,
+    p_amount: existing.credits_to_add,
+  });
+  if (creditError) throw new Error(creditError.message);
+
+  // 트랜잭션 기록
+  await supabase.from("credit_transactions").insert({
+    user_id: existing.user_id,
+    amount: existing.credits_to_add,
+    reason: `stripe_payment:${stripeSessionId}`,
+    admin_id: null,
+  });
+
+  return true;
+}
+
 export async function getAdminStats(): Promise<AdminStats> {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
