@@ -1,7 +1,12 @@
 "use client";
 
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { AnalysisOptions, AnalysisResult } from "@/lib/types";
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
 
 function getClarityStyle(confidence: number) {
   if (confidence >= 90) {
@@ -18,9 +23,13 @@ function formatResultText(result: AnalysisResult, options?: AnalysisOptions): st
     ? `Chart Vision AI 분석 결과\n종목: ${options.symbol} | 타임프레임: ${options.timeframe}\n`
     : "Chart Vision AI 분석 결과\n";
 
-  const tpslSection = (result.tp1 || result.stopLoss)
-    ? `\n[매매 가이드]\n${result.entryZoneLong ? `롱 진입 구간: ${result.entryZoneLong}` : ""}${result.entryZoneShort ? `\n숏 진입 구간: ${result.entryZoneShort}` : ""}${result.tp1 ? `\n목표가 1: ${result.tp1}` : ""}${result.tp2 ? `\n목표가 2: ${result.tp2}` : ""}${result.stopLoss ? `\n손절가: ${result.stopLoss}` : ""}${result.riskReward ? `\nR:R = ${result.riskReward}` : ""}`
+  const longGuide = result.entryZoneLong || result.tp1Long || result.stopLossLong
+    ? `\n[롱 매매 가이드]\n${result.entryZoneLong ? `진입 구간: ${result.entryZoneLong}` : ""}${result.tp1Long ? `\nTP1: ${result.tp1Long}` : ""}${result.tp2Long ? `\nTP2: ${result.tp2Long}` : ""}${result.stopLossLong ? `\n손절가: ${result.stopLossLong}` : ""}${result.riskRewardLong ? `\nR:R = ${result.riskRewardLong}` : ""}`
     : "";
+  const shortGuide = result.entryZoneShort || result.tp1Short || result.stopLossShort
+    ? `\n[숏 매매 가이드]\n${result.entryZoneShort ? `진입 구간: ${result.entryZoneShort}` : ""}${result.tp1Short ? `\nTP1: ${result.tp1Short}` : ""}${result.tp2Short ? `\nTP2: ${result.tp2Short}` : ""}${result.stopLossShort ? `\n손절가: ${result.stopLossShort}` : ""}${result.riskRewardShort ? `\nR:R = ${result.riskRewardShort}` : ""}`
+    : "";
+  const tpslSection = longGuide + shortGuide;
 
   const candleSection = result.candlePatterns?.length
     ? `\n캔들 패턴: ${result.candlePatterns.join(", ")}`
@@ -43,6 +52,15 @@ ${result.riskSummary}
 
 분석 명확도: ${result.confidence}%`.trim();
 }
+
+const GuideRow = memo(function GuideRow({ label, value, color, bold }: { label: string; value: string; color: string; bold?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-zinc-500">{label}</span>
+      <span className={`font-mono text-sm ${bold ? "font-bold" : "font-semibold"} ${color}`}>{value}</span>
+    </div>
+  );
+});
 
 const Badge = memo(function Badge({
   children,
@@ -89,12 +107,49 @@ interface AnalysisResultPanelProps {
   options?: AnalysisOptions;
   onReset: () => void;
   onRegisterSignal?: () => void;
+  imageBase64?: string;
+  mimeType?: string;
 }
 
-function AnalysisResultPanel({ result, options, onReset, onRegisterSignal }: AnalysisResultPanelProps) {
+function AnalysisResultPanel({ result, options, onReset, onRegisterSignal, imageBase64, mimeType }: AnalysisResultPanelProps) {
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
   const clarityStyle = getClarityStyle(result.confidence);
+
+  // 차트 대화 상태
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const handleSendChat = useCallback(async () => {
+    const text = chatInput.trim();
+    if (!text || chatLoading || !imageBase64 || !mimeType) return;
+
+    const newMessages: ChatMessage[] = [...chatMessages, { role: "user", content: text }];
+    setChatMessages(newMessages);
+    setChatInput("");
+    setChatLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64, mimeType, analysisResult: result, messages: newMessages }),
+      });
+      const data = await res.json();
+      if (res.ok && data.content) {
+        setChatMessages((prev) => [...prev, { role: "assistant", content: data.content }]);
+      } else {
+        setChatMessages((prev) => [...prev, { role: "assistant", content: data.error ?? "응답을 받지 못했습니다." }]);
+      }
+    } catch {
+      setChatMessages((prev) => [...prev, { role: "assistant", content: "네트워크 오류가 발생했습니다." }]);
+    } finally {
+      setChatLoading(false);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    }
+  }, [chatInput, chatLoading, chatMessages, imageBase64, mimeType, result]);
 
   const copyToClipboard = useCallback(async (text: string) => {
     try {
@@ -142,7 +197,9 @@ function AnalysisResultPanel({ result, options, onReset, onRegisterSignal }: Ana
 
   const btnBase = "flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500";
 
-  const hasTpSl = result.tp1 || result.stopLoss || result.entryZoneLong || result.entryZoneShort;
+  const hasLongGuide = !!(result.entryZoneLong || result.tp1Long || result.stopLossLong);
+  const hasShortGuide = !!(result.entryZoneShort || result.tp1Short || result.stopLossShort);
+  const hasTpSl = hasLongGuide || hasShortGuide;
   const hasCandlePatterns = result.candlePatterns && result.candlePatterns.length > 0;
 
   return (
@@ -226,52 +283,37 @@ function AnalysisResultPanel({ result, options, onReset, onRegisterSignal }: Ana
         </div>
       </div>
 
-      {/* TP/SL 매매 가이드 */}
+      {/* 매매 가이드 — 롱/숏 분리 */}
       {hasTpSl && (
-        <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-4">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">매매 가이드 (참고용)</p>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {result.entryZoneLong && (
-              <div>
-                <p className="mb-1 text-xs text-zinc-500">롱 진입 구간</p>
-                <p className="font-mono text-sm font-bold text-emerald-400">{result.entryZoneLong}</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {hasLongGuide && (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-emerald-500">롱 매매 가이드</p>
+              <div className="space-y-2">
+                {result.entryZoneLong && <GuideRow label="진입 구간" value={result.entryZoneLong} color="text-emerald-300" />}
+                {result.tp1Long && <GuideRow label="TP 1차" value={result.tp1Long} color="text-emerald-400" />}
+                {result.tp2Long && <GuideRow label="TP 2차" value={result.tp2Long} color="text-emerald-300" />}
+                {result.stopLossLong && <GuideRow label="손절가" value={result.stopLossLong} color="text-red-400" />}
+                {result.riskRewardLong && <GuideRow label="R : R" value={result.riskRewardLong} color="text-violet-300" bold />}
               </div>
-            )}
-            {result.entryZoneShort && (
-              <div>
-                <p className="mb-1 text-xs text-zinc-500">숏 진입 구간</p>
-                <p className="font-mono text-sm font-bold text-red-400">{result.entryZoneShort}</p>
+            </div>
+          )}
+          {hasShortGuide && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-red-500">숏 매매 가이드</p>
+              <div className="space-y-2">
+                {result.entryZoneShort && <GuideRow label="진입 구간" value={result.entryZoneShort} color="text-red-300" />}
+                {result.tp1Short && <GuideRow label="TP 1차" value={result.tp1Short} color="text-red-400" />}
+                {result.tp2Short && <GuideRow label="TP 2차" value={result.tp2Short} color="text-red-300" />}
+                {result.stopLossShort && <GuideRow label="손절가" value={result.stopLossShort} color="text-orange-400" />}
+                {result.riskRewardShort && <GuideRow label="R : R" value={result.riskRewardShort} color="text-violet-300" bold />}
               </div>
-            )}
-            {result.tp1 && (
-              <div>
-                <p className="mb-1 text-xs text-zinc-500">목표가 1</p>
-                <p className="font-mono text-sm font-bold text-emerald-300">{result.tp1}</p>
-              </div>
-            )}
-            {result.tp2 && (
-              <div>
-                <p className="mb-1 text-xs text-zinc-500">목표가 2</p>
-                <p className="font-mono text-sm font-bold text-emerald-200">{result.tp2}</p>
-              </div>
-            )}
-            {result.stopLoss && (
-              <div>
-                <p className="mb-1 text-xs text-zinc-500">손절가</p>
-                <p className="font-mono text-sm font-bold text-red-400">{result.stopLoss}</p>
-              </div>
-            )}
-            {result.riskReward && (
-              <div>
-                <p className="mb-1 text-xs text-zinc-500">리스크/리워드</p>
-                <p className="font-mono text-sm font-bold text-violet-300">{result.riskReward}</p>
-              </div>
-            )}
-          </div>
-          <p className="mt-3 text-xs text-zinc-600">
-            ※ 위 가격대는 차트 구조 기반 참고값입니다. 실제 진입/청산 결정은 반드시 본인이 직접 판단하세요.
-          </p>
+            </div>
+          )}
         </div>
+      )}
+      {hasTpSl && (
+        <p className="text-xs text-zinc-600">차트 구조 기반 참고값입니다. 실제 진입/청산은 반드시 본인이 직접 판단하세요.</p>
       )}
 
       {/* 롱/숏 관점 */}
@@ -333,9 +375,95 @@ function AnalysisResultPanel({ result, options, onReset, onRegisterSignal }: Ana
           />
         </div>
         <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-          이 수치는 롱/숏 성공 확률이 아니라, 이미지에서 차트 구조와 주요 레벨을 얼마나 명확히 읽었는지에 대한 참고 점수입니다.
+          이미지에서 차트 구조와 주요 레벨을 얼마나 명확히 읽었는지에 대한 참고 점수입니다.
         </p>
       </div>
+
+      {/* 차트 대화 */}
+      {imageBase64 && mimeType && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-900/80 p-4">
+          <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            <svg className="h-3.5 w-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            이 차트에 대해 질문하기
+          </p>
+
+          {chatMessages.length > 0 && (
+            <div className="mb-3 max-h-72 space-y-3 overflow-y-auto pr-1">
+              {chatMessages.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                      msg.role === "user"
+                        ? "bg-emerald-500/20 text-emerald-100"
+                        : "border border-zinc-700 bg-zinc-800 text-zinc-200"
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div className="flex justify-start">
+                  <div className="flex items-center gap-1.5 rounded-xl border border-zinc-700 bg-zinc-800 px-3.5 py-2.5">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-500" style={{ animationDelay: "0ms" }} />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-500" style={{ animationDelay: "150ms" }} />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-500" style={{ animationDelay: "300ms" }} />
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+          )}
+
+          {chatMessages.length === 0 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {[
+                "왜 이 레벨이 지지선인가요?",
+                "이 패턴이 실패하면 어떻게 되나요?",
+                "가장 주목할 캔들이 어디인가요?",
+              ].map((q) => (
+                <button
+                  key={q}
+                  onClick={() => setChatInput(q)}
+                  className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-400 transition hover:border-zinc-500 hover:text-zinc-200"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSendChat();
+                }
+              }}
+              placeholder="이 차트에 대해 궁금한 점을 물어보세요..."
+              disabled={chatLoading}
+              className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 outline-none transition focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-50"
+            />
+            <button
+              onClick={handleSendChat}
+              disabled={!chatInput.trim() || chatLoading}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="질문 전송"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-zinc-600">차트 구조 질문만 가능합니다. 매매 추천은 제공하지 않습니다.</p>
+        </div>
+      )}
     </section>
   );
 }

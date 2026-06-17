@@ -19,7 +19,6 @@ import type {
   HistoryItem,
 } from "@/lib/types";
 
-const SignalTracker = dynamic(() => import("@/components/signal-tracker"), { ssr: false });
 const CreditPurchaseModal = dynamic(() => import("@/components/credit-purchase-modal"), { ssr: false });
 
 const DEFAULT_OPTIONS: AnalysisOptions = {
@@ -37,7 +36,6 @@ export default function HomePage() {
   const router = useRouter();
   const [credits, setCredits] = useState<number | null>(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"analyze" | "signals">("analyze");
   const [pendingSignalId, setPendingSignalId] = useState<number | null>(null);
 
   const [imageBase64, setImageBase64] = useState<string | null>(null);
@@ -215,6 +213,7 @@ export default function HomePage() {
       if (json.detected?.timeframe) setOptions((p) => ({ ...p, timeframe: json.detected!.timeframe! }));
       setResult(analysisResult); setStatus("success");
       if (json.warning) setWarningMsg(json.warning);
+      void nextOptions;
       if (typeof json.signalId === "number") setPendingSignalId(json.signalId);
       addToHistory({ options: nextOptions, result: analysisResult, thumbnailDataUrl });
     } catch (error: unknown) {
@@ -294,25 +293,7 @@ export default function HomePage() {
       {showPurchaseModal && <CreditPurchaseModal onClose={() => setShowPurchaseModal(false)} />}
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        {/* 탭 */}
-        <div className="mb-6 flex gap-1 rounded-xl border border-zinc-800 bg-zinc-900 p-1">
-          {(["analyze", "signals"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
-                activeTab === tab
-                  ? "bg-zinc-800 text-zinc-100 shadow"
-                  : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              {tab === "analyze" ? "차트 분석" : "적중률 트래킹"}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === "signals" && <SignalTracker />}
-        {activeTab === "analyze" && <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
           <div className="space-y-5 lg:col-span-2">
             <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
               <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-400">차트 업로드</h2>
@@ -407,7 +388,9 @@ export default function HomePage() {
                 result={result}
                 options={options}
                 onReset={handleReset}
-                onRegisterSignal={pendingSignalId ? () => setActiveTab("signals") : undefined}
+                onRegisterSignal={pendingSignalId ? () => {} : undefined}
+                imageBase64={imageBase64 ?? undefined}
+                mimeType={mimeType ?? undefined}
               />
             )}
             {status === "idle" && !result && (
@@ -422,8 +405,8 @@ export default function HomePage() {
               </div>
             )}
           </div>
-        </div>}
-        {activeTab === "analyze" && <RiskDisclaimer />}
+        </div>
+        <RiskDisclaimer />
       </main>
     </div>
   );

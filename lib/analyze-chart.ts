@@ -122,21 +122,37 @@ const ANALYSIS_TOOL = {
         type: ["string", "null"],
         description: "Short entry price zone string (e.g. '69,000 ~ 69,300'). Null if chart trend doesn't favor a short."
       },
-      tp1: {
+      tp1Long: {
         type: ["string", "null"],
-        description: "First take-profit price level string based on nearby resistance/support."
+        description: "Long TP1: first UPSIDE target above long entry (nearby resistance). Null if no long setup."
       },
-      tp2: {
+      tp2Long: {
         type: ["string", "null"],
-        description: "Second take-profit price level string (further target)."
+        description: "Long TP2: second UPSIDE target further above TP1. Null if no long setup."
       },
-      stopLoss: {
+      stopLossLong: {
         type: ["string", "null"],
-        description: "Stop-loss price level string based on structure (swing low/high or key level)."
+        description: "Long stop-loss: price BELOW long entry based on swing low or key support. Null if no long setup."
       },
-      riskReward: {
+      riskRewardLong: {
         type: ["string", "null"],
-        description: "Risk-reward ratio string (e.g. '1:2.5') calculated from entry zone, TP1, and stop loss."
+        description: "Long R:R ratio string (e.g. '1:2.5') from long entry to TP1 vs stop loss. Null if no long setup."
+      },
+      tp1Short: {
+        type: ["string", "null"],
+        description: "Short TP1: first DOWNSIDE target below short entry (nearby support). Price must be LOWER than entry. Null if no short setup."
+      },
+      tp2Short: {
+        type: ["string", "null"],
+        description: "Short TP2: second DOWNSIDE target further below TP1. Price must be LOWER than TP1. Null if no short setup."
+      },
+      stopLossShort: {
+        type: ["string", "null"],
+        description: "Short stop-loss: price ABOVE short entry based on swing high or key resistance. Null if no short setup."
+      },
+      riskRewardShort: {
+        type: ["string", "null"],
+        description: "Short R:R ratio string (e.g. '1:2.0') from short entry to TP1Short vs stopLossShort. Null if no short setup."
       },
       higherTimeframeContext: {
         type: ["string", "null"],
@@ -158,11 +174,15 @@ const ANALYSIS_TOOL = {
       "riskSummary",
       "confidence",
       "entryZoneLong",
+      "tp1Long",
+      "tp2Long",
+      "stopLossLong",
+      "riskRewardLong",
       "entryZoneShort",
-      "tp1",
-      "tp2",
-      "stopLoss",
-      "riskReward",
+      "tp1Short",
+      "tp2Short",
+      "stopLossShort",
+      "riskRewardShort",
       "higherTimeframeContext",
     ],
   },
@@ -312,10 +332,16 @@ ${marketPricePrompt}
 
 [고급 분석 - 중요]
 - candlePatterns: 최근 캔들스틱 패턴 감지 (망치형, 도지, 핀바, 상승 삼병법 등). 명확한 것만.
-- entryZoneLong/entryZoneShort: 차트 구조에서 적절한 진입 구간 (지지/저항 기반). 유리하지 않으면 null.
-- tp1: 1차 목표가 (가까운 저항/지지). tp2: 2차 목표가 (더 먼 목표).
-- stopLoss: 구조적 손절가 (스윙 고점/저점 또는 주요 레벨 기반).
-- riskReward: 진입구간 중간~tp1 vs 손절 기준 R:R 비율 (예: "1:2.3")
+- entryZoneLong: 롱 진입 구간 (지지 기반). 롱이 불리하면 null.
+- tp1Long: 롱 1차 목표가 — 진입보다 위의 가까운 저항. 반드시 entryZoneLong보다 높아야 함.
+- tp2Long: 롱 2차 목표가 — tp1Long보다 더 위. 반드시 tp1Long보다 높아야 함.
+- stopLossLong: 롱 손절가 — 진입보다 아래 스윙로우/주요지지. 반드시 entryZoneLong보다 낮아야 함.
+- riskRewardLong: 롱 R:R 비율 (예: "1:2.3"). 없으면 null.
+- entryZoneShort: 숏 진입 구간 (저항 기반). 숏이 불리하면 null.
+- tp1Short: 숏 1차 목표가 — 진입보다 아래의 가까운 지지. 반드시 entryZoneShort보다 낮아야 함.
+- tp2Short: 숏 2차 목표가 — tp1Short보다 더 아래. 반드시 tp1Short보다 낮아야 함.
+- stopLossShort: 숏 손절가 — 진입보다 위 스윙하이/주요저항. 반드시 entryZoneShort보다 높아야 함.
+- riskRewardShort: 숏 R:R 비율 (예: "1:2.0"). 없으면 null.
 - higherTimeframeContext: 차트에서 보이는 상위 타임프레임 컨텍스트 1-2문장`;
 }
 
@@ -395,10 +421,14 @@ function validateAndNormalizeProviderResult(
     confidence: normalizeConfidence(value.confidence),
     entryZoneLong: readOptionalText(value.entryZoneLong),
     entryZoneShort: readOptionalText(value.entryZoneShort),
-    tp1: readOptionalText(value.tp1),
-    tp2: readOptionalText(value.tp2),
-    stopLoss: readOptionalText(value.stopLoss),
-    riskReward: readOptionalText(value.riskReward),
+    tp1Long: readOptionalText(value.tp1Long),
+    tp2Long: readOptionalText(value.tp2Long),
+    stopLossLong: readOptionalText(value.stopLossLong),
+    riskRewardLong: readOptionalText(value.riskRewardLong),
+    tp1Short: readOptionalText(value.tp1Short),
+    tp2Short: readOptionalText(value.tp2Short),
+    stopLossShort: readOptionalText(value.stopLossShort),
+    riskRewardShort: readOptionalText(value.riskRewardShort),
     higherTimeframeContext: readOptionalText(value.higherTimeframeContext),
   };
 

@@ -35,19 +35,27 @@ export interface AnalysisResult {
   shortScore: number;
   riskSummary: string;
   confidence: number;
-  /** 롱 진입 권장 구간 (예: "67,200 ~ 67,500") */
+  /** 롱 진입 권장 구간 */
   entryZoneLong?: string;
+  /** 롱 1차 목표가 */
+  tp1Long?: string;
+  /** 롱 2차 목표가 */
+  tp2Long?: string;
+  /** 롱 손절가 */
+  stopLossLong?: string;
+  /** 롱 R:R 비율 */
+  riskRewardLong?: string;
   /** 숏 진입 권장 구간 */
   entryZoneShort?: string;
-  /** 목표가 1 (첫 번째 익절) */
-  tp1?: string;
-  /** 목표가 2 (두 번째 익절) */
-  tp2?: string;
-  /** 손절가 */
-  stopLoss?: string;
-  /** 리스크/리워드 비율 (예: "1:2.5") */
-  riskReward?: string;
-  /** 멀티 타임프레임 컨텍스트 (상위 타임프레임 추세 요약) */
+  /** 숏 1차 목표가 */
+  tp1Short?: string;
+  /** 숏 2차 목표가 */
+  tp2Short?: string;
+  /** 숏 손절가 */
+  stopLossShort?: string;
+  /** 숏 R:R 비율 */
+  riskRewardShort?: string;
+  /** 멀티 타임프레임 컨텍스트 */
   higherTimeframeContext?: string;
 }
 
